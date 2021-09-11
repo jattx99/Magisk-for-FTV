@@ -2,27 +2,37 @@
 
 #include <pthread.h>
 #include <string>
+#include <limits>
+#include <atomic>
 
 #include <socket.hpp>
 
+// Daemon command code flags/masks
+enum : int {
+    SYNC_FLAG = (1 << 30),
+    DAEMON_CODE_MASK = std::numeric_limits<int>::max() >> 1
+};
+
 // Daemon command codes
-enum {
-    START_DAEMON,
-    SUPERUSER,
-    CHECK_VERSION,
-    CHECK_VERSION_CODE,
+enum : int {
+    START_DAEMON = SYNC_FLAG | 0,
+    CHECK_VERSION = SYNC_FLAG | 1,
+    CHECK_VERSION_CODE = SYNC_FLAG | 2,
+    GET_PATH = SYNC_FLAG | 3,
+    STOP_DAEMON = SYNC_FLAG | 4,
+    SUPERUSER = 5,
     POST_FS_DATA,
     LATE_START,
     BOOT_COMPLETE,
     MAGISKHIDE,
     SQLITE_CMD,
     REMOVE_MODULES,
-    GET_PATH,
+    ZYGISK_REQUEST,
     DAEMON_CODE_END,
 };
 
 // Return codes for daemon
-enum {
+enum : int {
     DAEMON_ERROR = -1,
     DAEMON_SUCCESS = 0,
     ROOT_REQUIRED,
@@ -30,7 +40,7 @@ enum {
 };
 
 // Daemon state
-enum {
+enum : int {
     STATE_NONE,
     STATE_POST_FS_DATA,
     STATE_POST_FS_DATA_DONE,
@@ -40,19 +50,18 @@ enum {
 
 int connect_daemon(bool create = false);
 
+extern std::atomic<int> logd_fd;
+int magisk_log(int prio, const char *fmt, va_list ap);
+void android_logging();
+
 // Daemon handlers
 void post_fs_data(int client);
 void late_start(int client);
 void boot_complete(int client);
 void magiskhide_handler(int client, ucred *cred);
 void su_daemon_handler(int client, ucred *credential);
+void zygisk_handler(int client, ucred *cred);
 
 // MagiskHide
-void auto_start_magiskhide(bool late_props);
-int stop_magiskhide();
-
-#if ENABLE_INJECT
-// For injected process to access daemon
-int remote_check_hide(int uid, const char *process);
-void remote_request_hide();
-#endif
+void check_enable_hide();
+int disable_hide();

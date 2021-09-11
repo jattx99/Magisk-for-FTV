@@ -4,14 +4,14 @@ LOCAL_PATH := $(call my-dir)
 # Binaries
 ########################
 
-# Global toggle for the WIP zygote injection features
-ENABLE_INJECT := 0
+# Global toggle for Zygisk
+DISABLE_ZYGISK := 0
 
 ifdef B_MAGISK
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := magisk
-LOCAL_STATIC_LIBRARIES := libnanopb libsystemproperties libutils
+LOCAL_STATIC_LIBRARIES := libnanopb libsystemproperties libutils libphmap libxhook
 LOCAL_C_INCLUDES := jni/include
 
 LOCAL_SRC_FILES := \
@@ -24,6 +24,8 @@ LOCAL_SRC_FILES := \
     core/scripting.cpp \
     core/restorecon.cpp \
     core/module.cpp \
+    core/logging.cpp \
+    core/thread.cpp \
     magiskhide/magiskhide.cpp \
     magiskhide/hide_utils.cpp \
     magiskhide/hide_policy.cpp \
@@ -32,20 +34,13 @@ LOCAL_SRC_FILES := \
     su/su.cpp \
     su/connect.cpp \
     su/pts.cpp \
-    su/su_daemon.cpp
+    su/su_daemon.cpp \
+    zygisk/entry.cpp \
+    zygisk/utils.cpp \
+    zygisk/hook.cpp \
+    zygisk/memory.cpp
 
 LOCAL_LDLIBS := -llog
-LOCAL_CPPFLAGS := -DENABLE_INJECT=$(ENABLE_INJECT)
-
-ifeq ($(ENABLE_INJECT),1)
-LOCAL_STATIC_LIBRARIES += libxhook
-LOCAL_SRC_FILES += \
-    inject/entry.cpp \
-    inject/utils.cpp \
-    inject/hook.cpp
-else
-LOCAL_SRC_FILES += magiskhide/proc_monitor.cpp
-endif
 
 include $(BUILD_EXECUTABLE)
 
@@ -83,7 +78,7 @@ ifdef B_BOOT
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := magiskboot
-LOCAL_STATIC_LIBRARIES := libmincrypt liblzma liblz4 libbz2 libfdt libutils libz
+LOCAL_STATIC_LIBRARIES := libmincrypt liblzma liblz4 libbz2 libfdt libutils libz libzopfli
 LOCAL_C_INCLUDES := jni/include
 
 LOCAL_SRC_FILES := \
@@ -95,7 +90,7 @@ LOCAL_SRC_FILES := \
     magiskboot/dtb.cpp \
     magiskboot/ramdisk.cpp \
     magiskboot/pattern.cpp \
-    utils/cpio.cpp
+    magiskboot/cpio.cpp
 
 LOCAL_LDFLAGS := -static
 include $(BUILD_EXECUTABLE)
@@ -146,7 +141,7 @@ ifneq (,$(wildcard jni/test.cpp))
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := test
-LOCAL_STATIC_LIBRARIES := libutils
+LOCAL_STATIC_LIBRARIES := libutils libphmap
 LOCAL_C_INCLUDES := jni/include
 LOCAL_SRC_FILES := test.cpp
 include $(BUILD_EXECUTABLE)

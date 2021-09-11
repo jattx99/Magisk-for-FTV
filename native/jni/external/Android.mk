@@ -1,5 +1,11 @@
 LOCAL_PATH := $(call my-dir)
 
+# Header only library
+include $(CLEAR_VARS)
+LOCAL_MODULE:= libphmap
+LOCAL_EXPORT_C_INCLUDES := $(LOCAL_PATH)/parallel-hashmap
+include $(BUILD_STATIC_LIBRARY)
+
 # libxz.a
 include $(CLEAR_VARS)
 LOCAL_MODULE:= libxz
@@ -359,7 +365,7 @@ include $(CLEAR_VARS)
 LOCAL_MODULE:= libxhook
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/xhook/libxhook/jni
 LOCAL_EXPORT_C_INCLUDES := $(LOCAL_C_INCLUDES)
-LOCAL_CFLAGS := -Wall -Wextra -Werror -fvisibility=hidden
+LOCAL_CFLAGS := -Wall -Wextra -Werror -fvisibility=hidden -D__android_log_print=magisk_log_print
 LOCAL_CONLYFLAGS := -std=c11
 LOCAL_SRC_FILES := \
     xhook/libxhook/jni/xh_log.c \
@@ -394,6 +400,27 @@ LOCAL_SRC_FILES := \
     zlib/trees.c \
     zlib/uncompr.c \
     zlib/zutil.c
+include $(BUILD_STATIC_LIBRARY)
+
+# libzopfli.a
+include $(CLEAR_VARS)
+LOCAL_MODULE:= libzopfli
+LOCAL_C_INCLUDES := $(LOCAL_PATH)/zopfli/src
+LOCAL_EXPORT_C_INCLUDES := $(LOCAL_C_INCLUDES)
+LOCAL_CFLAGS := -O2 -Wall -Werror -Wno-unused -Wno-unused-parameter
+LOCAL_SRC_FILES := \
+	zopfli/src/zopfli/blocksplitter.c \
+	zopfli/src/zopfli/cache.c \
+	zopfli/src/zopfli/deflate.c \
+	zopfli/src/zopfli/gzip_container.c \
+	zopfli/src/zopfli/hash.c \
+	zopfli/src/zopfli/katajainen.c \
+	zopfli/src/zopfli/lz77.c \
+	zopfli/src/zopfli/squeeze.c \
+	zopfli/src/zopfli/tree.c \
+	zopfli/src/zopfli/util.c \
+	zopfli/src/zopfli/zlib_container.c \
+	zopfli/src/zopfli/zopfli_lib.c
 include $(BUILD_STATIC_LIBRARY)
 
 CWD := $(LOCAL_PATH)

@@ -247,7 +247,15 @@ void boot_img::parse_image(uint8_t *addr, format_t type) {
     auto hp = reinterpret_cast<boot_img_hdr*>(addr);
     if (type == AOSP_VENDOR) {
         fprintf(stderr, "VENDOR_BOOT_HDR\n");
-        hdr = new dyn_img_vnd_v3(addr);
+        switch (hp->header_version) {
+        case 4:
+            hdr = new dyn_img_vnd_v4(addr);
+            break;
+        case 3:
+        default:
+            hdr = new dyn_img_vnd_v3(addr);
+            break;
+        }
     } else if (hp->page_size >= 0x02000000) {
         fprintf(stderr, "PXA_BOOT_HDR\n");
         hdr = new dyn_img_pxa(addr);
@@ -275,6 +283,9 @@ void boot_img::parse_image(uint8_t *addr, format_t type) {
             break;
         case 3:
             hdr = new dyn_img_v3(addr);
+            break;
+        case 4:
+            hdr = new dyn_img_v4(addr);
             break;
         default:
             hdr = new dyn_img_v0(addr);
@@ -320,6 +331,36 @@ void boot_img::parse_image(uint8_t *addr, format_t type) {
             kernel += sizeof(mtk_hdr);
             hdr->kernel_size() -= sizeof(mtk_hdr);
             k_fmt = check_fmt_lg(kernel, hdr->kernel_size());
+        }
+        if (k_fmt == ZIMAGE) {
+            z_hdr = reinterpret_cast<zimage_hdr *>(kernel);
+            uint32_t end = z_hdr->end_offset;
+            if (void *gzip_offset = memmem(kernel, hdr->kernel_size(), GZIP1_MAGIC, 2)) {
+                fprintf(stderr, "ZIMAGE_KERNEL\n");
+                z_info.hdr_sz = (uint8_t *) gzip_offset - kernel;
+                uint8_t *end_addr = kernel + z_hdr->end_offset;
+                for (uint8_t *end_ptr = end_addr - 4; end_ptr >= end_addr - 64; end_ptr -= 4) {
+                    uint32_t val;
+                    memcpy(&val, end_ptr, sizeof(val));
+                    if (z_hdr->end_offset - val < 0xFF && val < end) {
+                        end = val;
+                    }
+                }
+                if (end == z_hdr->end_offset) {
+                    fprintf(stderr, "Could not find end of zImage gzip data\n");
+                    exit(1);
+                } else {
+                    flags[ZIMAGE_KERNEL] = true;
+                    z_info.tail = kernel + end;
+                    z_info.tail_sz = hdr->kernel_size() - end;
+                    kernel += z_info.hdr_sz;
+                    hdr->kernel_size() = end - z_info.hdr_sz;
+                    k_fmt = check_fmt_lg(kernel, hdr->kernel_size());
+                }
+            } else {
+                fprintf(stderr, "Could not find zImage gzip data\n");
+                exit(1);
+            }
         }
         fprintf(stderr, "%-*s [%s]\n", PADDING, "KERNEL_FMT", fmt2name[k_fmt]);
     }
@@ -498,8 +539,12 @@ void repack(const char *src_img, const char *out_img, bool skip_comp) {
         // Copy MTK headers
         xwrite(fd, boot.k_hdr, sizeof(mtk_hdr));
     }
+    if (boot.flags[ZIMAGE_KERNEL]) {
+        // Copy zImage headers
+        xwrite(fd, boot.z_hdr, boot.z_info.hdr_sz);
+    }
+    size_t raw_size;
     if (access(KERNEL_FILE, R_OK) == 0) {
-        size_t raw_size;
         void *raw_buf;
         mmap_ro(KERNEL_FILE, raw_buf, raw_size);
         if (!COMPRESSED_ANY(check_fmt(raw_buf, raw_size)) && COMPRESSED(boot.k_fmt)) {
@@ -507,7 +552,29 @@ void repack(const char *src_img, const char *out_img, bool skip_comp) {
         } else {
             hdr->kernel_size() = xwrite(fd, raw_buf, raw_size);
         }
+
+        if (boot.flags[ZIMAGE_KERNEL] &&
+            boot.k_fmt == GZIP && hdr->kernel_size() > boot.hdr->kernel_size()) {
+            // Revert and try zipfoli
+            ftruncate(fd, lseek(fd, -hdr->kernel_size(), SEEK_CUR));
+            hdr->kernel_size() = compress(ZOPFLI, fd, raw_buf, raw_size);
+        }
+
         munmap(raw_buf, raw_size);
+    }
+    if (boot.flags[ZIMAGE_KERNEL]) {
+        if (hdr->kernel_size() > boot.hdr->kernel_size()) {
+            LOGW("Recompressed kernel is too large, using original kernel\n");
+            ftruncate(fd, lseek(fd, -hdr->kernel_size(), SEEK_CUR));
+            hdr->kernel_size() = xwrite(fd, boot.z_info.tail - boot.hdr->kernel_size(), boot.hdr->kernel_size());
+        } else {
+            write_zero(fd, boot.hdr->kernel_size() - hdr->kernel_size() - 4);
+            uint32_t sz = raw_size;
+            xwrite(fd, &sz, sizeof(sz));
+            hdr->kernel_size() = boot.hdr->kernel_size();
+        }
+        hdr->kernel_size() += boot.z_info.hdr_sz;
+        hdr->kernel_size() += xwrite(fd, boot.z_info.tail, boot.z_info.tail_sz);
     }
 
     // kernel dtb

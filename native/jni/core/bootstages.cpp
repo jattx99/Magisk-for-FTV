@@ -23,9 +23,9 @@ static bool safe_mode = false;
  * Setup *
  *********/
 
-#define MNT_DIR_IS(dir)   (me->mnt_dir == string_view(dir))
-#define SETMIR(b, part)   sprintf(b, "%s/" MIRRDIR "/" #part, MAGISKTMP.data())
-#define SETBLK(b, part)   sprintf(b, "%s/" BLOCKDIR "/" #part, MAGISKTMP.data())
+#define MNT_DIR_IS(dir) (me->mnt_dir == string_view(dir))
+#define SETMIR(b, part) snprintf(b, sizeof(b), "%s/" MIRRDIR "/" #part, MAGISKTMP.data())
+#define SETBLK(b, part) snprintf(b, sizeof(b), "%s/" BLOCKDIR "/" #part, MAGISKTMP.data())
 
 #define do_mount_mirror(part, flag) {\
     SETMIR(buf1, part); \
@@ -298,10 +298,10 @@ void post_fs_data(int client) {
         safe_mode = true;
         // Disable all modules and magiskhide so next boot will be clean
         disable_modules();
-        stop_magiskhide();
+        disable_hide();
     } else {
         exec_common_scripts("post-fs-data");
-        auto_start_magiskhide(false);
+        check_enable_hide();
         handle_modules();
     }
 
@@ -350,7 +350,7 @@ void boot_complete(int client) {
     if (access(SECURE_DIR, F_OK) != 0)
         xmkdir(SECURE_DIR, 0700);
 
-    auto_start_magiskhide(true);
+    check_enable_hide();
 
     if (!check_manager()) {
         if (access(MANAGERAPK, F_OK) == 0) {

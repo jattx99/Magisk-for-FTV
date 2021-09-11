@@ -7,6 +7,8 @@
 #include <lz4.h>
 #include <lz4frame.h>
 #include <lz4hc.h>
+#include <zopfli/util.h>
+#include <zopfli/deflate.h>
 
 #include <utils.hpp>
 
@@ -21,15 +23,24 @@ constexpr size_t CHUNK = 0x40000;
 constexpr size_t LZ4_UNCOMPRESSED = 0x800000;
 constexpr size_t LZ4_COMPRESSED = LZ4_COMPRESSBOUND(LZ4_UNCOMPRESSED);
 
+#if defined(ZOPFLI_MASTER_BLOCK_SIZE) && ZOPFLI_MASTER_BLOCK_SIZE > 0
+constexpr size_t ZOPFLI_CHUNK = ZOPFLI_MASTER_BLOCK_SIZE;
+#else
+constexpr size_t ZOPFLI_CHUNK = CHUNK;
+#endif
+
 class cpr_stream : public filter_stream {
 public:
     using filter_stream::filter_stream;
     using stream::read;
+    ssize_t writeFully(void *buf, size_t len) override {
+        return write(buf, len);
+    }
 };
 
 class gz_strm : public cpr_stream {
 public:
-    int write(const void *buf, size_t len) override {
+    ssize_t write(const void *buf, size_t len) override {
         return len ? write(buf, len, Z_NO_FLUSH) : 0;
     }
 
@@ -67,8 +78,8 @@ private:
     z_stream strm;
     uint8_t outbuf[CHUNK];
 
-    int write(const void *buf, size_t len, int flush) {
-        int ret = 0;
+    ssize_t write(const void *buf, size_t len, int flush) {
+        size_t ret = 0;
         strm.next_in = (Bytef *) buf;
         strm.avail_in = len;
         do {
@@ -103,9 +114,91 @@ public:
     explicit gz_encoder(stream_ptr &&base) : gz_strm(ENCODE, std::move(base)) {};
 };
 
+class zopfli_encoder : public cpr_stream {
+public:
+    ssize_t write(const void *buf, size_t len) override {
+        return len ? write(static_cast<const unsigned char *>(buf), len) : 0;
+    }
+
+    explicit zopfli_encoder(stream_ptr &&base) : cpr_stream(std::move(base)),
+        zo({}), out(nullptr), outsize(0), bp(0), crcvalue(crc32_z(0L, Z_NULL, 0)), in_size(0) {
+        ZopfliInitOptions(&zo);
+
+        ZOPFLI_APPEND_DATA(31, &out, &outsize);  /* ID1 */
+        ZOPFLI_APPEND_DATA(139, &out, &outsize); /* ID2 */
+        ZOPFLI_APPEND_DATA(8, &out, &outsize);   /* CM */
+        ZOPFLI_APPEND_DATA(0, &out, &outsize);   /* FLG */
+        /* MTIME */
+        ZOPFLI_APPEND_DATA(0, &out, &outsize);
+        ZOPFLI_APPEND_DATA(0, &out, &outsize);
+        ZOPFLI_APPEND_DATA(0, &out, &outsize);
+        ZOPFLI_APPEND_DATA(0, &out, &outsize);
+
+        ZOPFLI_APPEND_DATA(2, &out, &outsize);  /* XFL, 2 indicates best compression. */
+        ZOPFLI_APPEND_DATA(3, &out, &outsize);  /* OS follows Unix conventions. */
+    }
+
+    ~zopfli_encoder() override {
+        ZopfliDeflate(&zo, 2, 1, nullptr, 0, &bp, &out, &outsize);
+
+        /* CRC */
+        ZOPFLI_APPEND_DATA(crcvalue % 256, &out, &outsize);
+        ZOPFLI_APPEND_DATA((crcvalue >> 8) % 256, &out, &outsize);
+        ZOPFLI_APPEND_DATA((crcvalue >> 16) % 256, &out, &outsize);
+        ZOPFLI_APPEND_DATA((crcvalue >> 24) % 256, &out, &outsize);
+
+        /* ISIZE */
+        ZOPFLI_APPEND_DATA(in_size % 256, &out, &outsize);
+        ZOPFLI_APPEND_DATA((in_size >> 8) % 256, &out, &outsize);
+        ZOPFLI_APPEND_DATA((in_size >> 16) % 256, &out, &outsize);
+        ZOPFLI_APPEND_DATA((in_size >> 24) % 256, &out, &outsize);
+
+        bwrite(out, outsize);
+        free(out);
+    }
+
+private:
+    ZopfliOptions zo;
+    unsigned char *out;
+    size_t outsize;
+    unsigned char bp;
+    unsigned long crcvalue;
+    uint32_t in_size;
+
+    void free_out() {
+        free(out);
+        out = nullptr;
+        outsize = 0;
+    }
+
+    ssize_t write(const unsigned char *buf, size_t len) {
+        ssize_t ret = 0;
+        in_size += len;
+        crcvalue = crc32_z(crcvalue, buf, len);
+
+        for (size_t offset = 0; offset < len; offset += ZOPFLI_CHUNK) {
+            size_t end_offset = std::min(len, offset + ZOPFLI_CHUNK);
+            ZopfliDeflatePart(&zo, 2, 0, buf, offset, end_offset, &bp, &out, &outsize);
+
+            if (bp) {
+                // The last byte is not complete
+                ret += bwrite(out, outsize - 1);
+                uint8_t b = out[outsize - 1];
+                free_out();
+                ZOPFLI_APPEND_DATA(b, &out, &outsize);
+            } else {
+                ret += bwrite(out, outsize);
+                free_out();
+            }
+        }
+
+        return ret;
+    }
+};
+
 class bz_strm : public cpr_stream {
 public:
-    int write(const void *buf, size_t len) override {
+    ssize_t write(const void *buf, size_t len) override {
         return len ? write(buf, len, BZ_RUN) : 0;
     }
 
@@ -143,8 +236,8 @@ private:
     bz_stream strm;
     char outbuf[CHUNK];
 
-    int write(const void *buf, size_t len, int flush) {
-        int ret = 0;
+    ssize_t write(const void *buf, size_t len, int flush) {
+        size_t ret = 0;
         strm.next_in = (char *) buf;
         strm.avail_in = len;
         do {
@@ -181,7 +274,7 @@ public:
 
 class lzma_strm : public cpr_stream {
 public:
-    int write(const void *buf, size_t len) override {
+    ssize_t write(const void *buf, size_t len) override {
         return len ? write(buf, len, LZMA_RUN) : 0;
     }
 
@@ -229,8 +322,8 @@ private:
     lzma_stream strm;
     uint8_t outbuf[CHUNK];
 
-    int write(const void *buf, size_t len, lzma_action flush) {
-        int ret = 0;
+    ssize_t write(const void *buf, size_t len, lzma_action flush) {
+        size_t ret = 0;
         strm.next_in = (uint8_t *) buf;
         strm.avail_in = len;
         do {
@@ -274,8 +367,8 @@ public:
         delete[] outbuf;
     }
 
-    int write(const void *buf, size_t len) override {
-        int ret = 0;
+    ssize_t write(const void *buf, size_t len) override {
+        size_t ret = 0;
         auto inbuf = reinterpret_cast<const uint8_t *>(buf);
         if (!outbuf)
             read_header(inbuf, len);
@@ -325,8 +418,8 @@ public:
         LZ4F_createCompressionContext(&ctx, LZ4F_VERSION);
     }
 
-    int write(const void *buf, size_t len) override {
-        int ret = 0;
+    ssize_t write(const void *buf, size_t len) override {
+        size_t ret = 0;
         if (!outbuf)
             ret += write_header();
         if (len == 0)
@@ -390,8 +483,8 @@ public:
         delete[] buf;
     }
 
-    int write(const void *in, size_t size) override {
-        int ret = 0;
+    ssize_t write(const void *in, size_t size) override {
+        size_t ret = 0;
         auto inbuf = static_cast<const char *>(in);
         if (!init) {
             // Skip magic
@@ -399,7 +492,7 @@ public:
             size -= 4;
             init = true;
         }
-        for (int consumed; size != 0;) {
+        for (size_t consumed; size != 0;) {
             if (block_sz == 0) {
                 if (buf_off + size >= sizeof(block_sz)) {
                     consumed = sizeof(block_sz) - buf_off;
@@ -452,8 +545,8 @@ public:
         cpr_stream(std::move(base)), outbuf(new char[LZ4_COMPRESSED]),
         buf(new char[LZ4_UNCOMPRESSED]), init(false), lg(lg), buf_off(0), in_total(0) {}
 
-    int write(const void *in, size_t size) override {
-        int ret = 0;
+    ssize_t write(const void *in, size_t size) override {
+        size_t ret = 0;
         if (!init) {
             ret += bwrite("\x02\x21\x4c\x18", 4);
             init = true;
@@ -531,6 +624,8 @@ stream_ptr get_encoder(format_t type, stream_ptr &&base) {
             return make_unique<LZ4_encoder>(std::move(base), false);
         case LZ4_LG:
             return make_unique<LZ4_encoder>(std::move(base), true);
+        case ZOPFLI:
+            return make_unique<zopfli_encoder>(std::move(base));
         case GZIP:
         default:
             return make_unique<gz_encoder>(std::move(base));
@@ -549,6 +644,7 @@ stream_ptr get_decoder(format_t type, stream_ptr &&base) {
         case LZ4_LEGACY:
         case LZ4_LG:
             return make_unique<LZ4_decoder>(std::move(base));
+        case ZOPFLI:
         case GZIP:
         default:
             return make_unique<gz_decoder>(std::move(base));
