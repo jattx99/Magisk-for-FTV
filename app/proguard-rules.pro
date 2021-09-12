@@ -16,6 +16,11 @@
 #   public *;
 #}
 
+# Parcelable
+-keepclassmembers class * implements android.os.Parcelable {
+    public static final ** CREATOR;
+}
+
 # Kotlin
 -assumenosideeffects class kotlin.jvm.internal.Intrinsics {
 	public static void check*(...);
@@ -43,6 +48,10 @@
 # Excessive obfuscation
 -repackageclasses 'a'
 -allowaccessmodification
+
+-obfuscationdictionary ../dict.txt
+-classobfuscationdictionary ../dict.txt
+-packageobfuscationdictionary ../dict.txt
 
 -dontwarn org.bouncycastle.jsse.BCSSLParameters
 -dontwarn org.bouncycastle.jsse.BCSSLSocket

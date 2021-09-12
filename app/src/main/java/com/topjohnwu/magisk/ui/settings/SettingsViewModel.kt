@@ -9,14 +9,13 @@ import com.topjohnwu.magisk.BR
 import com.topjohnwu.magisk.BuildConfig
 import com.topjohnwu.magisk.R
 import com.topjohnwu.magisk.arch.BaseViewModel
-import com.topjohnwu.magisk.arch.adapterOf
-import com.topjohnwu.magisk.arch.diffListOf
-import com.topjohnwu.magisk.arch.itemBindingOf
 import com.topjohnwu.magisk.core.Const
 import com.topjohnwu.magisk.core.Info
 import com.topjohnwu.magisk.core.isRunningAsStub
 import com.topjohnwu.magisk.core.tasks.HideAPK
 import com.topjohnwu.magisk.data.database.RepoDao
+import com.topjohnwu.magisk.databinding.adapterOf
+import com.topjohnwu.magisk.databinding.itemBindingOf
 import com.topjohnwu.magisk.di.AppContext
 import com.topjohnwu.magisk.events.AddHomeIconEvent
 import com.topjohnwu.magisk.events.RecreateEvent
@@ -32,7 +31,7 @@ class SettingsViewModel(
 
     val adapter = adapterOf<BaseSettingsItem>()
     val itemBinding = itemBindingOf<BaseSettingsItem> { it.bindExtra(BR.callback, this) }
-    val items = diffListOf(createItems())
+    val items = createItems()
 
     init {
         viewModelScope.launch {
@@ -89,6 +88,10 @@ class SettingsViewModel(
             if (Build.VERSION.SDK_INT < 26) {
                 // Re-authenticate is not feasible on 8.0+
                 list.add(Reauthenticate)
+            }
+            if (Build.VERSION.SDK_INT >= 31) {
+                // Can hide overlay windows on 12.0+
+                list.remove(Tapjack)
             }
         }
 

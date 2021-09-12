@@ -1,6 +1,3 @@
-import org.apache.tools.ant.filters.FixCrLfFilter
-import java.io.PrintStream
-
 plugins {
     id("com.android.application")
     kotlin("android")
@@ -27,17 +24,14 @@ android {
         vectorDrawables.useSupportLibrary = true
         versionName = Config.version
         versionCode = Config.versionCode
-        ndk.abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
+        ndk.abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
     }
 
     buildTypes {
-        getByName("release") {
+        release {
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            proguardFiles("proguard-rules.pro")
         }
     }
 
@@ -52,16 +46,16 @@ android {
 
     packagingOptions {
         resources {
-            excludes.add("/META-INF/*")
-            excludes.add("/org/bouncycastle/**")
-            excludes.add("/kotlin/**")
-            excludes.add("/kotlinx/**")
-            excludes.add("/okhttp3/**")
-            excludes.add("/*.txt")
-            excludes.add("/*.bin")
+            excludes += "/META-INF/*"
+            excludes += "/org/bouncycastle/**"
+            excludes += "/kotlin/**"
+            excludes += "/kotlinx/**"
+            excludes += "/okhttp3/**"
+            excludes += "/*.txt"
+            excludes += "/*.bin"
         }
         jniLibs {
-            keepDebugSymbols.add("**/*.so")
+            keepDebugSymbols += "**/*.so"
         }
     }
 
@@ -70,118 +64,14 @@ android {
     }
 }
 
-val syncLibs by tasks.registering(Sync::class) {
-    into("src/main/jniLibs")
-    into("armeabi-v7a") {
-        from(rootProject.file("native/out/armeabi-v7a")) {
-            include("busybox", "magiskboot", "magiskinit", "magisk")
-            rename { if (it == "magisk") "libmagisk32.so" else "lib$it.so" }
-        }
-    }
-    into("x86") {
-        from(rootProject.file("native/out/x86")) {
-            include("busybox", "magiskboot", "magiskinit", "magisk")
-            rename { if (it == "magisk") "libmagisk32.so" else "lib$it.so" }
-        }
-    }
-    into("arm64-v8a") {
-        from(rootProject.file("native/out/arm64-v8a")) {
-            include("busybox", "magiskboot", "magiskinit", "magisk")
-            rename { if (it == "magisk") "libmagisk64.so" else "lib$it.so" }
-        }
-    }
-    into("x86_64") {
-        from(rootProject.file("native/out/x86_64")) {
-            include("busybox", "magiskboot", "magiskinit", "magisk")
-            rename { if (it == "magisk") "libmagisk64.so" else "lib$it.so" }
-        }
-    }
-    onlyIf {
-        if (inputs.sourceFiles.files.size != 16)
-            throw StopExecutionException("Please build binaries first! (./build.py binary)")
-        true
-    }
-}
+setupApp()
 
-val syncAssets by tasks.registering(Sync::class) {
-    dependsOn(syncLibs)
-    inputs.property("version", Config.version)
-    inputs.property("versionCode", Config.versionCode)
-    into("src/main/assets")
-    from(rootProject.file("scripts")) {
-        include("util_functions.sh", "boot_patch.sh", "uninstaller.sh", "addon.d.sh")
-    }
-    into("chromeos") {
-        from(rootProject.file("tools/futility"))
-        from(rootProject.file("tools/keys")) {
-            include("kernel_data_key.vbprivk", "kernel.keyblock")
-        }
-    }
-    filesMatching("**/util_functions.sh") {
-        filter {
-            it.replace("#MAGISK_VERSION_STUB",
-                "MAGISK_VER='${Config.version}'\n" +
-                "MAGISK_VER_CODE=${Config.versionCode}"
-            )
-        }
-        filter<FixCrLfFilter>("eol" to FixCrLfFilter.CrLf.newInstance("lf"))
-    }
-}
-
-val syncResources by tasks.registering(Sync::class) {
-    dependsOn(syncAssets)
-    into("src/main/resources/META-INF/com/google/android")
-    from(rootProject.file("scripts/update_binary.sh")) {
-        rename { "update-binary" }
-    }
-    from(rootProject.file("scripts/flash_script.sh")) {
-        rename { "updater-script" }
-    }
-}
-
-tasks["preBuild"]?.dependsOn(syncResources)
-
-android.applicationVariants.all {
-    val keysDir = rootProject.file("tools/keys")
-    val outSrcDir = File(buildDir, "generated/source/keydata/$name")
-    val outSrc = File(outSrcDir, "com/topjohnwu/signing/KeyData.java")
-
-    fun PrintStream.newField(name: String, file: File) {
-        println("public static byte[] $name() {")
-        print("byte[] buf = {")
-        val bytes = file.readBytes()
-        print(bytes.joinToString(",") { "(byte)(${it.toInt() and 0xff})" })
-        println("};")
-        println("return buf;")
-        println("}")
-    }
-
-    val genSrcTask = tasks.register("generate${name.capitalize()}KeyData") {
-        inputs.dir(keysDir)
-        outputs.file(outSrc)
-        doLast {
-            outSrc.parentFile.mkdirs()
-            PrintStream(outSrc).use {
-                it.println("package com.topjohnwu.signing;")
-                it.println("public final class KeyData {")
-
-                it.newField("testCert", File(keysDir, "testkey.x509.pem"))
-                it.newField("testKey", File(keysDir, "testkey.pk8"))
-                it.newField("verityCert", File(keysDir, "verity.x509.pem"))
-                it.newField("verityKey", File(keysDir, "verity.pk8"))
-
-                it.println("}")
-            }
-        }
-    }
-    registerJavaGeneratingTask(genSrcTask, outSrcDir)
+configurations.all {
+    exclude("org.jetbrains.kotlin", "kotlin-stdlib-jdk7")
+    exclude("org.jetbrains.kotlin", "kotlin-stdlib-jdk8")
 }
 
 dependencies {
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
-    implementation(kotlin("stdlib"))
-    // Some dependencies request JDK 8 stdlib, specify manually here to prevent version mismatch
-    implementation(kotlin("stdlib-jdk8"))
     implementation(project(":app:shared"))
 
     implementation("com.github.topjohnwu:jtar:1.0.0")
@@ -227,18 +117,18 @@ dependencies {
     implementation("androidx.room:room-ktx:${vRoom}")
     kapt("androidx.room:room-compiler:${vRoom}")
 
-    val vNav: String by rootProject.extra
+    val vNav = "2.4.0-alpha08"
     implementation("androidx.navigation:navigation-fragment-ktx:${vNav}")
     implementation("androidx.navigation:navigation-ui-ktx:${vNav}")
 
     implementation("androidx.biometric:biometric:1.1.0")
-    implementation("androidx.constraintlayout:constraintlayout:2.0.4")
+    implementation("androidx.constraintlayout:constraintlayout:2.1.0")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("androidx.browser:browser:1.3.0")
     implementation("androidx.preference:preference:1.1.1")
     implementation("androidx.recyclerview:recyclerview:1.2.1")
     implementation("androidx.fragment:fragment-ktx:1.3.6")
-    implementation("androidx.work:work-runtime-ktx:2.5.0")
+    implementation("androidx.work:work-runtime-ktx:2.7.0-beta01")
     implementation("androidx.transition:transition:1.4.1")
     implementation("androidx.core:core-ktx:1.6.0")
     implementation("com.google.android.material:material:1.4.0")
