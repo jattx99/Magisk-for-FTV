@@ -1,7 +1,7 @@
 #include <sys/mount.h>
 #include <libgen.h>
 
-#include <utils.hpp>
+#include <base.hpp>
 #include <magisk.hpp>
 #include <daemon.hpp>
 #include <selinux.hpp>
@@ -38,6 +38,7 @@ Advanced Options (Internal APIs):
    --clone SRC DEST          clone SRC to DEST
    --sqlite SQL              exec SQL commands to Magisk database
    --path                    print Magisk tmpfs mount path
+   --denylist ARGS           denylist config CLI
 
 Available applets:
 )EOF");
@@ -55,14 +56,12 @@ int magisk_main(int argc, char *argv[]) {
         printf(MAGISK_VERSION ":MAGISK (" str(MAGISK_VER_CODE) ")\n");
         return 0;
     } else if (argv[1] == "-v"sv) {
-        int fd = connect_daemon();
-        write_int(fd, CHECK_VERSION);
+        int fd = connect_daemon(MainRequest::CHECK_VERSION);
         string v = read_string(fd);
         printf("%s\n", v.data());
         return 0;
     } else if (argv[1] == "-V"sv) {
-        int fd = connect_daemon();
-        write_int(fd, CHECK_VERSION_CODE);
+        int fd = connect_daemon(MainRequest::CHECK_VERSION_CODE);
         printf("%d\n", read_int(fd));
         return 0;
     } else if (argv[1] == "--list"sv) {
@@ -75,35 +74,32 @@ int magisk_main(int argc, char *argv[]) {
     } else if (argv[1] == "--restorecon"sv) {
         restorecon();
         return 0;
-    } else if (argc >= 4 && argv[1] == "--clone-attr"sv) {;
+    } else if (argc >= 4 && argv[1] == "--clone-attr"sv) {
         clone_attr(argv[2], argv[3]);
         return 0;
     } else if (argc >= 4 && argv[1] == "--clone"sv) {
         cp_afc(argv[2], argv[3]);
         return 0;
     } else if (argv[1] == "--daemon"sv) {
-        int fd = connect_daemon(true);
-        write_int(fd, START_DAEMON);
+        int fd = connect_daemon(MainRequest::START_DAEMON, true);
+        close(fd);
         return 0;
     } else if (argv[1] == "--stop"sv) {
-        int fd = connect_daemon();
-        write_int(fd, STOP_DAEMON);
+        int fd = connect_daemon(MainRequest::STOP_DAEMON);
         return read_int(fd);
     } else if (argv[1] == "--post-fs-data"sv) {
-        int fd = connect_daemon(true);
-        write_int(fd, POST_FS_DATA);
+        int fd = connect_daemon(MainRequest::POST_FS_DATA, true);
         return read_int(fd);
     } else if (argv[1] == "--service"sv) {
-        int fd = connect_daemon(true);
-        write_int(fd, LATE_START);
+        int fd = connect_daemon(MainRequest::LATE_START, true);
         return read_int(fd);
     } else if (argv[1] == "--boot-complete"sv) {
-        int fd = connect_daemon(true);
-        write_int(fd, BOOT_COMPLETE);
+        int fd = connect_daemon(MainRequest::BOOT_COMPLETE, true);
         return read_int(fd);
+    } else if (argv[1] == "--denylist"sv) {
+        return denylist_cli(argc - 1, argv + 1);
     } else if (argc >= 3 && argv[1] == "--sqlite"sv) {
-        int fd = connect_daemon();
-        write_int(fd, SQLITE_CMD);
+        int fd = connect_daemon(MainRequest::SQLITE_CMD);
         write_string(fd, argv[2]);
         string res;
         for (;;) {
@@ -113,12 +109,10 @@ int magisk_main(int argc, char *argv[]) {
             printf("%s\n", res.data());
         }
     } else if (argv[1] == "--remove-modules"sv) {
-        int fd = connect_daemon();
-        write_int(fd, REMOVE_MODULES);
+        int fd = connect_daemon(MainRequest::REMOVE_MODULES);
         return read_int(fd);
     } else if (argv[1] == "--path"sv) {
-        int fd = connect_daemon();
-        write_int(fd, GET_PATH);
+        int fd = connect_daemon(MainRequest::GET_PATH);
         string path = read_string(fd);
         printf("%s\n", path.data());
         return 0;

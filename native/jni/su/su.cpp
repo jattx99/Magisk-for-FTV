@@ -15,7 +15,7 @@
 
 #include <magisk.hpp>
 #include <daemon.hpp>
-#include <utils.hpp>
+#include <base.hpp>
 #include <flags.h>
 
 #include "su.hpp"
@@ -39,7 +39,7 @@ static void usage(int status) {
     "  -v, --version                 display version number and exit\n"
     "  -V                            display version code and exit\n"
     "  -mm, -M,\n"
-    "  --mount-master                force run in the global mount namespace\n");
+    "  --mount-master                force run in the global mount namespace\n\n");
     exit(status);
 }
 
@@ -159,10 +159,7 @@ int su_client_main(int argc, char *argv[]) {
     int ptmx, fd;
 
     // Connect to client
-    fd = connect_daemon();
-
-    // Tell the daemon we are su
-    write_int(fd, SUPERUSER);
+    fd = connect_daemon(MainRequest::SUPERUSER);
 
     // Send su_request
     xwrite(fd, &su_req, sizeof(su_req_base));

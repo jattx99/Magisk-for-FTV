@@ -4,12 +4,12 @@
 #include <map>
 
 #include <resetprop.hpp>
-#include <utils.hpp>
+#include <base.hpp>
 
 #define _REALLY_INCLUDE_SYS__SYSTEM_PROPERTIES_H_
 #include <_system_properties.h>
 
-#include "_resetprop.hpp"
+#include "prop.hpp"
 
 using namespace std;
 
@@ -176,7 +176,7 @@ struct resetprop : public sysprop {
         // Always delete existing read-only properties, because they could be
         // long properties and cannot directly go through __system_property_update
         if (pi != nullptr && str_starts(name, "ro.")) {
-            delprop(name, false);
+            __system_property_delete(name, false /* Do NOT trim node */);
             pi = nullptr;
         }
 
@@ -228,7 +228,7 @@ struct resetprop : public sysprop {
             return 1;
         LOGD("resetprop: delete prop [%s]\n", name);
 
-        int ret = __system_property_delete(name);
+        int ret = __system_property_delete(name, true);
         if (persist && str_starts(name, "persist.")) {
             if (persist_deleteprop(name))
                 ret = 0;

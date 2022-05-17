@@ -4,6 +4,7 @@ import android.animation.ValueAnimator
 import android.content.res.ColorStateList
 import android.graphics.Paint
 import android.graphics.drawable.Drawable
+import android.text.Spanned
 import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
@@ -29,11 +30,8 @@ import com.google.android.material.chip.Chip
 import com.google.android.material.textfield.TextInputLayout
 import com.topjohnwu.magisk.R
 import com.topjohnwu.magisk.di.ServiceLocator
-import com.topjohnwu.magisk.ktx.coroutineScope
-import com.topjohnwu.magisk.ktx.replaceRandomWithSpecial
 import com.topjohnwu.superuser.internal.UiThreadHandler
 import com.topjohnwu.widget.IndeterminateCheckBox
-import kotlinx.coroutines.*
 import kotlin.math.roundToInt
 
 @BindingAdapter("gone")
@@ -57,10 +55,8 @@ fun setInvisibleUnless(view: View, invisibleUnless: Boolean) {
 }
 
 @BindingAdapter("markdownText")
-fun setMarkdownText(tv: TextView, text: CharSequence) {
-    tv.coroutineScope.launch(Dispatchers.IO) {
-        ServiceLocator.markwon.setMarkdown(tv, text.toString())
-    }
+fun setMarkdownText(tv: TextView, markdown: Spanned) {
+    ServiceLocator.markwon.setParsedMarkdown(tv, markdown)
 }
 
 @BindingAdapter("onNavigationClick")
@@ -76,22 +72,6 @@ fun setImageResource(view: ImageView, @DrawableRes resId: Int) {
 @BindingAdapter("srcCompat")
 fun setImageResource(view: ImageView, drawable: Drawable) {
     view.setImageDrawable(drawable)
-}
-
-@BindingAdapter("movieBehavior", "movieBehaviorText")
-fun setMovieBehavior(view: TextView, isMovieBehavior: Boolean, text: String) {
-    (view.tag as? Job)?.cancel()
-    view.tag = null
-    if (isMovieBehavior) {
-        view.tag = GlobalScope.launch(Dispatchers.Main.immediate) {
-            while (true) {
-                delay(150)
-                view.text = text.replaceRandomWithSpecial()
-            }
-        }
-    } else {
-        view.text = text
-    }
 }
 
 @BindingAdapter("onTouch")

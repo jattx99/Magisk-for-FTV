@@ -22,9 +22,9 @@
 #include <sys/ptrace.h>
 #include <sys/wait.h>
 
-#include <utils.hpp>
+#include <base.hpp>
 
-#include "inject.hpp"
+#include "zygisk.hpp"
 #include "ptrace.hpp"
 
 using namespace std;

@@ -4,11 +4,13 @@ import com.topjohnwu.magisk.core.Config
 import com.topjohnwu.magisk.core.Config.Value.BETA_CHANNEL
 import com.topjohnwu.magisk.core.Config.Value.CANARY_CHANNEL
 import com.topjohnwu.magisk.core.Config.Value.CUSTOM_CHANNEL
+import com.topjohnwu.magisk.core.Config.Value.DEBUG_CHANNEL
 import com.topjohnwu.magisk.core.Config.Value.DEFAULT_CHANNEL
 import com.topjohnwu.magisk.core.Config.Value.STABLE_CHANNEL
-import com.topjohnwu.magisk.core.Const
 import com.topjohnwu.magisk.core.Info
-import com.topjohnwu.magisk.data.network.*
+import com.topjohnwu.magisk.data.network.GithubApiServices
+import com.topjohnwu.magisk.data.network.GithubPageServices
+import com.topjohnwu.magisk.data.network.RawServices
 import retrofit2.HttpException
 import timber.log.Timber
 import java.io.IOException
@@ -16,7 +18,6 @@ import java.io.IOException
 class NetworkService(
     private val pages: GithubPageServices,
     private val raw: RawServices,
-    private val jsd: JSDelivrServices,
     private val api: GithubApiServices
 ) {
     suspend fun fetchUpdate() = safe {
@@ -24,12 +25,12 @@ class NetworkService(
             DEFAULT_CHANNEL, STABLE_CHANNEL -> fetchStableUpdate()
             BETA_CHANNEL -> fetchBetaUpdate()
             CANARY_CHANNEL -> fetchCanaryUpdate()
+            DEBUG_CHANNEL -> fetchDebugUpdate()
             CUSTOM_CHANNEL -> fetchCustomUpdate(Config.customChannelUrl)
             else -> throw IllegalArgumentException()
         }
-        if (info.magisk.versionCode < Info.env.magiskVersionCode &&
-            Config.updateChannel == DEFAULT_CHANNEL
-        ) {
+        if (info.magisk.versionCode < Info.env.versionCode &&
+            Config.updateChannel == DEFAULT_CHANNEL) {
             Config.updateChannel = BETA_CHANNEL
             info = fetchBetaUpdate()
         }
@@ -40,6 +41,7 @@ class NetworkService(
     private suspend fun fetchStableUpdate() = pages.fetchUpdateJSON("stable.json")
     private suspend fun fetchBetaUpdate() = pages.fetchUpdateJSON("beta.json")
     private suspend fun fetchCanaryUpdate() = pages.fetchUpdateJSON("canary.json")
+    private suspend fun fetchDebugUpdate() = pages.fetchUpdateJSON("debug.json")
     private suspend fun fetchCustomUpdate(url: String) = raw.fetchCustomUpdate(url)
 
     private inline fun <T> safe(factory: () -> T): T? {
@@ -59,20 +61,8 @@ class NetworkService(
         }
     }
 
-    // Modules related
-    suspend fun fetchRepoInfo(url: String = Const.Url.OFFICIAL_REPO) = safe {
-        raw.fetchRepoInfo(url)
-    }
-
     // Fetch files
-    suspend fun fetchSafetynet() = wrap { jsd.fetchSafetynet() }
-    suspend fun fetchBootctl() = wrap { jsd.fetchBootctl() }
-    suspend fun fetchInstaller() = wrap {
-        val sha = fetchMainVersion()
-        jsd.fetchInstaller(sha)
-    }
     suspend fun fetchFile(url: String) = wrap { raw.fetchFile(url) }
     suspend fun fetchString(url: String) = wrap { raw.fetchString(url) }
-
-    private suspend fun fetchMainVersion() = api.fetchBranch(MAGISK_MAIN, "master").commit.sha
+    suspend fun fetchModuleJson(url: String) = wrap { raw.fetchModuleJson(url) }
 }

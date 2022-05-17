@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
-    package="com.topjohnwu.magisk">
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 
@@ -12,9 +11,8 @@
         android:multiArch="true"
         tools:ignore="UnusedAttribute,GoogleAppIndexingWarning">
 
-        <!-- Splash -->
         <activity
-            android:name=".core.SplashActivity"
+            android:name=".ui.MainActivity"
             android:exported="true"
             android:theme="@style/SplashTheme">
             <intent-filter>
@@ -27,15 +25,12 @@
             </intent-filter>
         </activity>
 
-        <!-- Main -->
-        <activity android:name=".ui.MainActivity" />
-
-        <!-- Superuser -->
         <activity
             android:name=".ui.surequest.SuRequestActivity"
             android:directBootAware="true"
             android:excludeFromRecents="true"
             android:exported="false"
+            android:taskAffinity=""
             tools:ignore="AppLinkUrlError">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -43,7 +38,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Receiver -->
         <receiver
             android:name=".core.Receiver"
             android:directBootAware="true"
@@ -51,6 +45,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.LOCALE_CHANGED" />
                 <action android:name="android.intent.action.UID_REMOVED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.PACKAGE_REPLACED" />
@@ -60,10 +55,15 @@
             </intent-filter>
         </receiver>
 
-        <!-- DownloadService -->
-        <service android:name=".core.download.DownloadService" />
+        <service
+            android:name=".core.download.DownloadService"
+            android:exported="false" />
 
-        <!-- FileProvider -->
+        <service
+            android:name=".core.JobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <provider
             android:name=".core.Provider"
             android:authorities="${applicationId}.provider"
@@ -71,16 +71,16 @@
             android:exported="false"
             android:grantUriPermissions="true" />
 
-        <!-- Initialize WorkManager on-demand -->
-        <provider
-            android:name="androidx.startup.InitializationProvider"
-            android:authorities="${applicationId}.androidx-startup"
-            tools:node="remove">
-        </provider>
-
         <!-- We don't invalidate Room -->
         <service
             android:name="androidx.room.MultiInstanceInvalidationService"
+            tools:node="remove" />
+
+        <!-- We don't need emoji compat -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
             tools:node="remove" />
 
     </application>

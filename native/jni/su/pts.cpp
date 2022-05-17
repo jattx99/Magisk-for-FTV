@@ -13,7 +13,7 @@
 #include <fcntl.h>
 #include <termios.h>
 
-#include <utils.hpp>
+#include <base.hpp>
 
 #include "pts.hpp"
 
@@ -86,7 +86,7 @@ int pts_open(char *slave_name, size_t slave_name_size) {
         goto error;
 
     // Get the slave name
-    if (ptsname_r(fdm, slave_name, slave_name_size-1))
+    if (ptsname_r(fdm, slave_name, slave_name_size - 1))
         goto error;
 
     slave_name[slave_name_size - 1] = '\0';
@@ -108,6 +108,7 @@ error:
 int get_pty_num(int fd) {
     int pty_num = -1;
     if (ioctl(fd, TIOCGPTN, &pty_num) != 0) {
+        LOGW("get_pty_num failed with %d: %s\n", errno, std::strerror(errno));
         return -1;
     }
     return pty_num;

@@ -1,34 +1,49 @@
 // Cached thread pool implementation
 
-#include <utils.hpp>
+#include <base.hpp>
+
+#include <daemon.hpp>
 
 using namespace std;
 
 #define THREAD_IDLE_MAX_SEC 60
-#define MAX_THREAD_BLOCK_MS 5
 #define CORE_POOL_SIZE 3
 
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t send_task = PTHREAD_COND_INITIALIZER;
-static pthread_cond_t recv_task = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t send_task = PTHREAD_COND_INITIALIZER_MONOTONIC_NP;
+static pthread_cond_t recv_task = PTHREAD_COND_INITIALIZER_MONOTONIC_NP;
 
 // The following variables should be guarded by lock
-static int available_threads = 0;
-static int active_threads = 0;
+static int idle_threads = 0;
+static int total_threads = 0;
 static function<void()> pending_task;
 
-static void operator+=(timeval &a, const timeval &b) {
+static void operator+=(timespec &a, const timespec &b) {
     a.tv_sec += b.tv_sec;
-    a.tv_usec += b.tv_usec;
-    if (a.tv_usec >= 1000000) {
+    a.tv_nsec += b.tv_nsec;
+    if (a.tv_nsec >= 1000000000L) {
         a.tv_sec++;
-        a.tv_usec -= 1000000;
+        a.tv_nsec -= 1000000000L;
     }
 }
 
-static timespec to_ts(const timeval &tv) { return { tv.tv_sec, tv.tv_usec * 1000 };  }
+static void reset_pool() {
+    clear_poll();
+    pthread_mutex_unlock(&lock);
+    pthread_mutex_destroy(&lock);
+    pthread_mutex_init(&lock, nullptr);
+    pthread_cond_destroy(&send_task);
+    send_task = PTHREAD_COND_INITIALIZER_MONOTONIC_NP;
+    pthread_cond_destroy(&recv_task);
+    recv_task = PTHREAD_COND_INITIALIZER_MONOTONIC_NP;
+    idle_threads = 0;
+    total_threads = 0;
+    pending_task = nullptr;
+}
 
 static void *thread_pool_loop(void * const is_core_pool) {
+    pthread_atfork(nullptr, nullptr, &reset_pool);
+
     // Block all signals
     sigset_t mask;
     sigfillset(&mask);
@@ -39,44 +54,44 @@ static void *thread_pool_loop(void * const is_core_pool) {
         function<void()> local_task;
         {
             mutex_guard g(lock);
-            ++available_threads;
+            ++idle_threads;
             if (!pending_task) {
                 if (is_core_pool) {
                     pthread_cond_wait(&send_task, &lock);
                 } else {
-                    timeval tv;
-                    gettimeofday(&tv, nullptr);
-                    tv += { THREAD_IDLE_MAX_SEC, 0 };
-                    auto ts = to_ts(tv);
+                    timespec ts;
+                    clock_gettime(CLOCK_MONOTONIC, &ts);
+                    ts += { THREAD_IDLE_MAX_SEC, 0 };
                     if (pthread_cond_timedwait(&send_task, &lock, &ts) == ETIMEDOUT) {
                         // Terminate thread after max idle time
-                        --available_threads;
-                        --active_threads;
+                        --idle_threads;
+                        --total_threads;
                         return nullptr;
                     }
                 }
             }
-            local_task.swap(pending_task);
-            pthread_cond_signal(&recv_task);
-            --available_threads;
+            if (pending_task) {
+                local_task.swap(pending_task);
+                pthread_cond_signal(&recv_task);
+            }
+            --idle_threads;
         }
-        local_task();
+        if (local_task)
+            local_task();
+        if (getpid() == gettid())
+            exit(0);
     }
 }
 
 void exec_task(function<void()> &&task) {
     mutex_guard g(lock);
     pending_task.swap(task);
-    if (available_threads == 0) {
-        ++active_threads;
-        new_daemon_thread(thread_pool_loop, active_threads > CORE_POOL_SIZE ? nullptr : (void*)(1));
+    if (idle_threads == 0) {
+        ++total_threads;
+        long is_core_pool = total_threads <= CORE_POOL_SIZE;
+        new_daemon_thread(thread_pool_loop, (void *) is_core_pool);
     } else {
         pthread_cond_signal(&send_task);
     }
-    timeval tv;
-    gettimeofday(&tv, nullptr);
-    // Wait for task consumption
-    tv += { 0, MAX_THREAD_BLOCK_MS * 1000 };
-    auto ts = to_ts(tv);
-    pthread_cond_timedwait(&recv_task, &lock, &ts);
+    pthread_cond_wait(&recv_task, &lock);
 }

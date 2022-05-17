@@ -5,11 +5,9 @@
     <string name="superuser">Υπερχρήστης</string>
     <string name="logs">Αρχείο Καταγραφής</string>
     <string name="settings">Ρυθμίσεις</string>
-    <string name="refresh">Ανανέωση τοπικών δεδομένων</string>
     <string name="install">Εγκατάσταση</string>
     <string name="section_home">Αρχική</string>
     <string name="section_theme">Θέματα</string>
-    <string name="safetynet">SafetyNet</string>
 
     <!--Home-->
     <string name="no_connection">Δεν υπάρχει διαθέσιμη σύνδεση</string>
@@ -30,7 +28,6 @@
     <string name="invalid_update_channel">Λανθασμένο κανάλι ενημέρωσης</string>
     <string name="uninstall_magisk_title">Απεγκατάσταση Magisk</string>
     <string name="uninstall_magisk_msg">Όλα τα modules θα απενεργοποιηθούν/αφαιρεθούν. Το root θα αφαιρεθεί και ενδέχεται να κρυπτογραφηθούν τα δεδομένα σας, εάν δεν είναι κρυπτογραφημένα!</string>
-    <string name="home_check_safetynet">Έλεγχος SafetyNet</string>
 
     <!--Install-->
 	<string name="keep_force_encryption">Διατήρηση επιβεβλημένης κρυπτογράφησης</string>
@@ -50,7 +47,7 @@
     <string name="reboot_delay_toast">Επανεκκίνηση σε 5 δευτερόλεπτα…</string>
     <string name="flash_screen_title">Εγκατάσταση</string>
 
-    <!--Superuser-->	
+    <!--Superuser-->
     <string name="su_request_title">Αίτημα υπερχρήστη</string>
     <string name="touch_filtered_warning">Επειδή μια εφαρμογή αποκρύπτει ένα αίτημα υπερχρήστη, το Magisk δεν μπορεί να επαληθεύσει την απάντησή σας</string>
     <string name="deny">Άρνηση</string>
@@ -76,7 +73,7 @@
     <string name="toast">Αναδυόμενο παράθυρο</string>
     <string name="none">Κανένα</string>
 
-    <string name="superuser_toggle_notification">Ειδοποιήσεις</string>			   
+    <string name="superuser_toggle_notification">Ειδοποιήσεις</string>
     <string name="superuser_toggle_revoke">Ανακάλεσε</string>
     <string name="superuser_policy_none">Καμία εφαρμογή δεν έχει ζητήσει άδεια υπερχρήστη.</string>
     <!--Logs-->
@@ -89,19 +86,11 @@
     <string name="target_uid">UID Στόχος: %1$d</string>
 
     <!--SafetyNet-->
-    <string name="safetynet_api_error">Σφάλμα του SafetyNet API</string>
-    <string name="safetynet_res_invalid">Η απόκριση είναι άκυρη</string>
-    <string name="safetynet_attest_success">Η πιστοποίηση ήταν επιτυχής!</string>
-    <string name="safetynet_attest_failure">Η πιστοποίηση απέτυχε!</string>
-    <string name="safetynet_attest_loading">Μισό λεπτό…</string>
-    <string name="safetynet_attest_restart">Προσπάθησε ξανά</string>
 
     <!--MagiskHide-->
     <string name="show_system_app">Εμφάνιση εφαρμογών συστήματος</string>
     <string name="show_os_app">Εμφάνιση εφαρμογών OS</string>
     <string name="hide_filter_hint">Φιλτράρισμα</string>
-    <string name="hide_scroll_up">Μετακίνηση</string>
-    <string name="hide_filters">Φίλτρα</string>
     <string name="hide_search">Αναζήτηση</string>
 
     <!--Module-->
@@ -112,15 +101,10 @@
     <string name="reboot_download">Επανεκκίνηση για λήψη</string>
     <string name="reboot_edl">Επανεκκίνηση σε EDL</string>
     <string name="module_version_author">%1$s από %2$s</string>
-    <string name="module_section_pending">Ενημερώσεις</string>
-    <string name="module_section_pending_action">Ενημέρωση όλων</string>
     <string name="module_state_remove">Αφαίρεση</string>
     <string name="module_state_restore">Επαναφορά</string>
     <string name="module_action_install_external">Εγκατάσταση από χώρο αποθήκευσης</string>
     <string name="update_available">Διαθέσιμη Ενημέρωση</string>
-    <string name="module_installed">@string/home_installed_version</string>
-    <string name="module_section_online">Online</string>
-    <string name="sorting_order">Ταξινόμηση κατά</string>
 
     <!--Settings-->
     <string name="settings_dark_mode_title">Λειτουργία θέματος</string>
@@ -130,8 +114,6 @@
     <string name="settings_dark_mode_dark">Πάντα Dark</string>
     <string name="settings_download_path_title">Διαδρομή λήψης</string>
     <string name="settings_download_path_message">Τα αρχεία θα αποθηκευτούν στο %1$s</string>
-    <string name="settings_clear_cache_title">Εκκαθάριση προσωρινής μνήμης αποθετηρίων</string>
-    <string name="settings_clear_cache_summary">Καθαρίζει τις κρυφές πληροφορίες για απευθείας συνδεδεμένα αποθετήρια, αναγκάζει την εφαρμογή να κάνει ανανέωση σε απευθείας σύνδεση</string>
     <string name="settings_hide_app_title">Απόκρυψη της εφαρμογής Magisk</string>
     <string name="settings_hide_app_summary">Εγκαταστήστε μια εφαρμογή με τυχαίο αναγνωριστικό πακέτου και προσαρμοσμένη ετικέτα εφαρμογής</string>
     <string name="settings_restore_app_title">Επαναφέρετε την εφαρμογή Magisk</string>
@@ -145,7 +127,6 @@
     <string name="settings_update_beta">Δοκιμαστικό</string>
     <string name="settings_update_custom">Προσαρμοσμένο</string>
     <string name="settings_update_custom_msg">Εισαγωγή ενός custom URL</string>
-    <string name="settings_magiskhide_summary">Κρύβει το Magisk από διάφορες ανιχνεύσεις</string>
     <string name="settings_hosts_title">Systemless hosts</string>
     <string name="settings_hosts_summary">Υποστήριξη Systemless hosts για εφαρμογές Adblock</string>
     <string name="settings_hosts_toast">Προσθήκη αρθρώματος systemless hosts</string>
@@ -184,7 +165,7 @@
     <string name="settings_user_independent">Ανεξάρτητη από τον χρήστη</string>
     <string name="owner_only_summary">Μόνο ο ιδιοκτήτης έχει πρόσβαση root</string>
     <string name="owner_manage_summary">Μόνο ο ιδιοκτήτης μπορεί να διαχειριστεί την πρόσβαση root και να δεχτεί προτροπές αίτημάτων</string>
-    <string name="user_indepenent_summary">Κάθε χρήστης έχει τους δικούς του ξεχωριστούς κανόνες root</string>																																						  
+    <string name="user_indepenent_summary">Κάθε χρήστης έχει τους δικούς του ξεχωριστούς κανόνες root</string>
 
     <string name="mount_namespace_mode">Λειτουργία προσάρτησης χώρου ονομάτων</string>
     <string name="settings_ns_global">Καθολικός Χώρος Ονομάτων</string>
@@ -199,17 +180,15 @@
     <string name="progress_channel">Ειδοποιήσεις προόδου</string>
     <string name="download_complete">Η λήψη ολοκληρώθηκε</string>
     <string name="download_file_error">Σφάλμα στη λήψη του αρχείου</string>
-    <string name="magisk_update_title">Νέα Ενημέρωση Magisk Διαθέσιμη!</string>																																				  
+    <string name="magisk_update_title">Νέα Ενημέρωση Magisk Διαθέσιμη!</string>
 
     <!--Toasts, Dialogs-->
     <string name="yes">Ναι</string>
     <string name="no">Όχι</string>
-    <string name="repo_install_title">Εγκατάσταση %1$s</string>
-    <string name="repo_install_msg">Θέλετε να εγκαταστήσετε το %1$s τώρα;</string>
+    <string name="repo_install_title">Εγκατάσταση %1$s %2$s(%3$d)</string>
     <string name="download">Λήψη</string>
     <string name="reboot">Επανεκκίνηση</string>
     <string name="release_notes">Σημειώσεις έκδοσης</string>
-    <string name="repo_cache_cleared">Πραγματοποιήθηκε εκκαθάριση της προσωρινής μνήμης του Repository</string>
     <string name="flashing">Προγραμματισμός σε εξέλιξη</string>
     <string name="done">Ολοκληρώθηκε</string>
     <string name="failure">Αποτυχία</string>
@@ -220,8 +199,6 @@
     <string name="restore_img_msg">Επαναφορά…</string>
     <string name="restore_done">Η επαναφορά πραγματοποιήθηκε</string>
     <string name="restore_fail">Δεν υπάρχει αντίγραφο ασφαλείας!</string>
-    <string name="proprietary_title">Λήψη Ιδιόκτητου Κώδικα</string>
-    <string name="proprietary_notice">Το Magisk είναι FOSS και δεν περιλαμβάνει κώδικα για το ιδιόκτητο SafetyNet API της Google.\n\nΘέλετε να κατεβάσετε μια ιδιόκτητη επέκταση για ελέγχους SafetyNet;</string>
     <string name="setup_fail">Η εγκατάσταση απέτυχε</string>
     <string name="env_fix_title">Απαιτείται πρόσθετη εγκατάσταση</string>
     <string name="env_fix_msg">Η συσκευή σας χρειάζεται πρόσθετη ρύθμιση για να λειτουργεί σωστά το Magisk. Θέλετε να συνεχίσετε και να επανεκκινήσετε;</string>
@@ -232,7 +209,7 @@
     <string name="external_rw_permission_denied">Παραχωρήστε άδεια αποθήκευσης για να ενεργοποιήσετε αυτήν τη λειτουργία</string>
     <string name="add_shortcut_title">Προσθέστε συντόμευση στην αρχική οθόνη</string>
     <string name="add_shortcut_msg">Μετά την απόκρυψη αυτής της εφαρμογής, το όνομα και το εικονίδιο της ενδέχεται να είναι δύσκολο να αναγνωριστούν. Θέλετε να προσθέσετε μια όμορφη συντόμευση στην αρχική οθόνη;</string>
-																	   
+
     <string name="app_not_found">Δεν βρέθηκε εφαρμογή που να χειρίζεται αυτήν την ενέργεια</string>
-										 
+
 </resources>

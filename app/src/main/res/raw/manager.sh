@@ -8,8 +8,11 @@ run_delay() {
 
 env_check() {
   for file in busybox magiskboot magiskinit util_functions.sh boot_patch.sh; do
-    [ -f $MAGISKBIN/$file ] || return 1
+    [ -f "$MAGISKBIN/$file" ] || return 1
   done
+  if [ "$2" -ge 24302 ]; then
+    [ -f "$MAGISKBIN/magiskpolicy" ] || return 1
+  fi
   grep -xqF "MAGISK_VER='$1'" "$MAGISKBIN/util_functions.sh" || return 1
   grep -xqF "MAGISK_VER_CODE=$2" "$MAGISKBIN/util_functions.sh" || return 1
   return 0
@@ -91,7 +94,7 @@ restore_imgs() {
 }
 
 post_ota() {
-  cd /data/adb
+  cd $NVBASE
   cp -f $1 bootctl
   rm -f $1
   chmod 755 bootctl
@@ -129,9 +132,11 @@ adb_pm_install() {
   local tmp=/data/local/tmp/temp.apk
   cp -f "$1" $tmp
   chmod 644 $tmp
-  su 2000 -c pm install $tmp || pm install $tmp
+  su 2000 -c pm install $tmp || pm install $tmp || su 1000 -c pm install $tmp
   local res=$?
   rm -f $tmp
+  # Note: change this will kill self
+  [ $res != 0 ] && appops set "$2" REQUEST_INSTALL_PACKAGES allow
   return $res
 }
 
@@ -191,6 +196,14 @@ get_flags() {
   KEEPVERITY=$SYSTEM_ROOT
   [ "$(getprop ro.crypto.state)" = "encrypted" ] && ISENCRYPTED=true || ISENCRYPTED=false
   KEEPFORCEENCRYPT=$ISENCRYPTED
+  # Although this most certainly won't work without root, keep it just in case
+  if [ -e /dev/block/by-name/vbmeta_a ] || [ -e /dev/block/by-name/vbmeta ]; then
+    VBMETAEXIST=true
+  else
+    VBMETAEXIST=false
+  fi
+  # Preset PATCHVBMETAFLAG to false in the non-root case
+  PATCHVBMETAFLAG=false
   # Do NOT preset RECOVERYMODE here
 }
 

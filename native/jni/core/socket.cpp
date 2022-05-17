@@ -2,7 +2,7 @@
 #include <endian.h>
 
 #include <socket.hpp>
-#include <utils.hpp>
+#include <base.hpp>
 
 using namespace std;
 
@@ -20,9 +20,17 @@ socklen_t setup_sockaddr(sockaddr_un *sun, const char *name) {
     return socket_len(sun);
 }
 
-void get_client_cred(int fd, ucred *cred) {
-    socklen_t len = sizeof(*cred);
-    getsockopt(fd, SOL_SOCKET, SO_PEERCRED, cred, &len);
+bool get_client_cred(int fd, sock_cred *cred) {
+    socklen_t len = sizeof(ucred);
+    if (getsockopt(fd, SOL_SOCKET, SO_PEERCRED, cred, &len) != 0)
+        return false;
+    char buf[4096];
+    len = sizeof(buf);
+    if (getsockopt(fd, SOL_SOCKET, SO_PEERSEC, buf, &len) != 0)
+        return false;
+    buf[len] = '\0';
+    cred->context = buf;
+    return true;
 }
 
 static int send_fds(int sockfd, void *cmsgbuf, size_t bufsz, const int *fds, int cnt) {
@@ -93,14 +101,17 @@ static void *recv_fds(int sockfd, char *cmsgbuf, size_t bufsz, int cnt) {
 }
 
 vector<int> recv_fds(int sockfd) {
+    vector<int> results;
+
     // Peek fd count to allocate proper buffer
     int cnt;
     recv(sockfd, &cnt, sizeof(cnt), MSG_PEEK);
+    if (cnt == 0)
+        return results;
 
     vector<char> cmsgbuf;
     cmsgbuf.resize(CMSG_SPACE(sizeof(int) * cnt));
 
-    vector<int> results;
     void *data = recv_fds(sockfd, cmsgbuf.data(), cmsgbuf.size(), cnt);
     if (data == nullptr)
         return results;
@@ -147,11 +158,13 @@ void write_int_be(int fd, int val) {
     xwrite(fd, &nl, sizeof(nl));
 }
 
-void read_string(int fd, std::string &str) {
+bool read_string(int fd, std::string &str) {
     int len = read_int(fd);
     str.clear();
+    if (len < 0)
+        return false;
     str.resize(len);
-    xxread(fd, str.data(), len);
+    return xxread(fd, str.data(), len) == len;
 }
 
 string read_string(int fd) {

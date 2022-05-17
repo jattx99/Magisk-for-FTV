@@ -13,24 +13,22 @@ import com.topjohnwu.magisk.core.Const
 import com.topjohnwu.magisk.core.Info
 import com.topjohnwu.magisk.core.isRunningAsStub
 import com.topjohnwu.magisk.core.tasks.HideAPK
-import com.topjohnwu.magisk.data.database.RepoDao
 import com.topjohnwu.magisk.databinding.adapterOf
 import com.topjohnwu.magisk.databinding.itemBindingOf
 import com.topjohnwu.magisk.di.AppContext
 import com.topjohnwu.magisk.events.AddHomeIconEvent
 import com.topjohnwu.magisk.events.RecreateEvent
+import com.topjohnwu.magisk.events.SnackbarEvent
 import com.topjohnwu.magisk.events.dialog.BiometricEvent
 import com.topjohnwu.magisk.ktx.activity
 import com.topjohnwu.magisk.utils.Utils
 import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.launch
 
-class SettingsViewModel(
-    private val repositoryDao: RepoDao
-) : BaseViewModel(), BaseSettingsItem.Callback {
+class SettingsViewModel : BaseViewModel(), BaseSettingsItem.Handler {
 
     val adapter = adapterOf<BaseSettingsItem>()
-    val itemBinding = itemBindingOf<BaseSettingsItem> { it.bindExtra(BR.callback, this) }
+    val itemBinding = itemBindingOf<BaseSettingsItem> { it.bindExtra(BR.handler, this) }
     val items = createItems()
 
     init {
@@ -57,12 +55,8 @@ class SettingsViewModel(
             UpdateChannel, UpdateChannelUrl, DoHToggle, UpdateChecker, DownloadPath
         ))
         if (Info.env.isActive) {
-            list.add(ClearRepoCache)
             if (Const.USER_ID == 0) {
-                if (hidden)
-                    list.add(Restore)
-                else if (Info.isConnected.get())
-                    list.add(Hide)
+                if (hidden) list.add(Restore) else list.add(Hide)
             }
         }
 
@@ -70,8 +64,11 @@ class SettingsViewModel(
         if (Info.env.isActive) {
             list.addAll(listOf(
                 Magisk,
-                MagiskHide, SystemlessHosts
+                SystemlessHosts
             ))
+            if (Const.Version.atLeast_24_0()) {
+                list.addAll(listOf(Zygisk, DenyList, DenyListConfig))
+            }
         }
 
         // Superuser
@@ -98,22 +95,26 @@ class SettingsViewModel(
         return list
     }
 
-    override fun onItemPressed(view: View, item: BaseSettingsItem, callback: () -> Unit) = when (item) {
-        is DownloadPath -> withExternalRW(callback)
-        is Biometrics -> authenticate(callback)
-        is Theme -> SettingsFragmentDirections.actionSettingsFragmentToThemeFragment().navigate()
-        is ClearRepoCache -> clearRepoCache()
-        is SystemlessHosts -> createHosts()
-        is Restore -> HideAPK.restore(view.activity)
-        is AddShortcut -> AddHomeIconEvent().publish()
-        else -> callback()
+    override fun onItemPressed(view: View, item: BaseSettingsItem, andThen: () -> Unit) {
+        when (item) {
+            DownloadPath -> withExternalRW(andThen)
+            Biometrics -> authenticate(andThen)
+            Theme -> SettingsFragmentDirections.actionSettingsFragmentToThemeFragment().navigate()
+            DenyListConfig -> SettingsFragmentDirections.actionSettingsFragmentToDenyFragment().navigate()
+            SystemlessHosts -> createHosts()
+            Hide, Restore -> withInstallPermission(andThen)
+            AddShortcut -> AddHomeIconEvent().publish()
+            else -> andThen()
+        }
     }
 
-    override fun onItemChanged(view: View, item: BaseSettingsItem) {
+    override fun onItemAction(view: View, item: BaseSettingsItem) {
         when (item) {
-            is Language -> RecreateEvent().publish()
-            is UpdateChannel -> openUrlIfNecessary(view)
+            Language -> RecreateEvent().publish()
+            UpdateChannel -> openUrlIfNecessary(view)
             is Hide -> viewModelScope.launch { HideAPK.hide(view.activity, item.value) }
+            Restore -> viewModelScope.launch { HideAPK.restore(view.activity) }
+            Zygisk -> if (Zygisk.mismatch) SnackbarEvent(R.string.reboot_apply_change).publish()
             else -> Unit
         }
     }
@@ -132,15 +133,8 @@ class SettingsViewModel(
         }.publish()
     }
 
-    private fun clearRepoCache() {
-        viewModelScope.launch {
-            repositoryDao.clear()
-            Utils.toast(R.string.repo_cache_cleared, Toast.LENGTH_SHORT)
-        }
-    }
-
     private fun createHosts() {
-        Shell.su("add_hosts_module").submit {
+        Shell.cmd("add_hosts_module").submit {
             Utils.toast(R.string.settings_hosts_toast, Toast.LENGTH_SHORT)
         }
     }

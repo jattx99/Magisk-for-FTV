@@ -1,11 +1,9 @@
-
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.FileInputStream
+import java.io.InputStream
 import java.io.PrintStream
 import java.security.SecureRandom
 import java.util.*
-import java.util.zip.GZIPOutputStream
 import javax.crypto.Cipher
 import javax.crypto.CipherOutputStream
 import javax.crypto.spec.IvParameterSpec
@@ -54,7 +52,7 @@ private fun <T> chain(vararg iters: Iterable<T>) = sequence {
 private fun PrintStream.byteField(name: String, bytes: ByteArray) {
     println("public static byte[] $name() {")
     print("byte[] buf = {")
-    print(bytes.joinToString(",") { "(byte)(${it.toInt() and 0xff})" })
+    print(bytes.joinToString(",") { it.toString() })
     println("};")
     println("return buf;")
     println("}")
@@ -76,36 +74,13 @@ fun genKeyData(keysDir: File, outSrc: File) {
 }
 
 fun genStubManifest(srcDir: File, outDir: File): String {
-    class Component(
-        val real: String,
-        val stub: String,
-        val xml: String
-    )
-
     outDir.deleteRecursively()
-
-    val mainPkgDir = File(outDir, "com/topjohnwu/magisk")
-    mainPkgDir.mkdirs()
 
     fun String.ind(level: Int) = replaceIndentByMargin("    ".repeat(level))
 
-    val cmpList = mutableListOf<Component>()
+    val cmpList = mutableListOf<String>()
 
-    cmpList.add(Component(
-        "androidx.core.app.CoreComponentFactory",
-        "DelegateComponentFactory",
-        ""
-    ))
-
-    cmpList.add(Component(
-        "com.topjohnwu.magisk.core.App",
-        "DelegateApplication",
-        ""
-    ))
-
-    cmpList.add(Component(
-        "com.topjohnwu.magisk.core.Provider",
-        "FileProvider",
+    cmpList.add(
         """
         |<provider
         |    android:name="%s"
@@ -113,11 +88,9 @@ fun genStubManifest(srcDir: File, outDir: File): String {
         |    android:directBootAware="true"
         |    android:exported="false"
         |    android:grantUriPermissions="true" />""".ind(2)
-    ))
+    )
 
-    cmpList.add(Component(
-        "com.topjohnwu.magisk.core.Receiver",
-        "dummy.DummyReceiver",
+    cmpList.add(
         """
         |<receiver
         |    android:name="%s"
@@ -126,6 +99,7 @@ fun genStubManifest(srcDir: File, outDir: File): String {
         |    <intent-filter>
         |        <action android:name="android.intent.action.LOCALE_CHANGED" />
         |        <action android:name="android.intent.action.UID_REMOVED" />
+        |        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
         |    </intent-filter>
         |    <intent-filter>
         |        <action android:name="android.intent.action.PACKAGE_REPLACED" />
@@ -134,11 +108,9 @@ fun genStubManifest(srcDir: File, outDir: File): String {
         |        <data android:scheme="package" />
         |    </intent-filter>
         |</receiver>""".ind(2)
-    ))
+    )
 
-    cmpList.add(Component(
-        "com.topjohnwu.magisk.core.SplashActivity",
-        "DownloadActivity",
+    cmpList.add(
         """
         |<activity
         |    android:name="%s"
@@ -148,48 +120,38 @@ fun genStubManifest(srcDir: File, outDir: File): String {
         |        <category android:name="android.intent.category.LAUNCHER" />
         |    </intent-filter>
         |</activity>""".ind(2)
-    ))
+    )
 
-    cmpList.add(Component(
-        "com.topjohnwu.magisk.ui.MainActivity",
-        "",
-        """|<activity android:name="%s" />""".ind(2)
-    ))
-
-    cmpList.add(Component(
-        "com.topjohnwu.magisk.ui.surequest.SuRequestActivity",
-        "",
+    cmpList.add(
         """
         |<activity
         |    android:name="%s"
         |    android:directBootAware="true"
         |    android:excludeFromRecents="true"
         |    android:exported="false"
+        |    android:taskAffinity=""
         |    tools:ignore="AppLinkUrlError">
         |    <intent-filter>
         |        <action android:name="android.intent.action.VIEW"/>
         |        <category android:name="android.intent.category.DEFAULT"/>
         |    </intent-filter>
         |</activity>""".ind(2)
-    ))
+    )
 
-    cmpList.add(Component(
-        "com.topjohnwu.magisk.core.download.DownloadService",
-        "",
-        """|<service android:name="%s" />""".ind(2)
-    ))
-
-    cmpList.add(Component(
-        "androidx.work.impl.background.systemjob.SystemJobService",
-        "",
+    cmpList.add(
         """
         |<service
         |    android:name="%s"
-        |    android:directBootAware="false"
-        |    android:enabled="true"
-        |    android:exported="true"
+        |    android:exported="false" />""".ind(2)
+    )
+
+    cmpList.add(
+        """
+        |<service
+        |    android:name="%s"
+        |    android:exported="false"
         |    android:permission="android.permission.BIND_JOB_SERVICE" />""".ind(2)
-    ))
+    )
 
     val names = mutableListOf<String>()
     names.addAll(c1)
@@ -197,70 +159,66 @@ fun genStubManifest(srcDir: File, outDir: File): String {
     names.addAll(c3.subList(0, 10))
     names.shuffle(RANDOM)
 
-    // Decapitalize as older Android versions do not allow capitalized package names
-    // Distinct by lower case to support case insensitive file systems
-    val pkgNames = names.map { it.decapitalize(Locale.ROOT) }
+    val pkgNames = names
+        // Distinct by lower case to support case insensitive file systems
         .distinctBy { it.toLowerCase(Locale.ROOT) }
+        // Old Android does not support capitalized package names
+        // Check Android 7.0.0 PackageParser#buildClassName
+        .map { it.decapitalize(Locale.ROOT) }
 
-    var idx = 0
-    fun genCmpName() = "${pkgNames[idx++]}.${names.random(kRANDOM)}"
+    fun isJavaKeyword(name: String) = when (name) {
+        "do", "if", "for", "int", "new", "try" -> true
+        else -> false
+    }
 
-    fun genClass(clzName: String, type: String) {
+    val cmps = mutableListOf<String>()
+    val usedNames = mutableListOf<String>()
+
+    fun genCmpName(): String {
+        var pkgName: String
+        do {
+            pkgName = pkgNames.random(kRANDOM)
+        } while (isJavaKeyword(pkgName))
+
+        var clzName: String
+        do {
+            clzName = names.random(kRANDOM)
+        } while (isJavaKeyword(clzName))
+        val cmp = "${pkgName}.${clzName}"
+        usedNames.add(cmp)
+        return cmp
+    }
+
+    fun genClass(type: String) {
+        val clzName = genCmpName()
         val (pkg, name) = clzName.split('.')
         val pkgDir = File(outDir, pkg)
-        pkgDir.mkdir()
+        pkgDir.mkdirs()
         PrintStream(File(pkgDir, "$name.java")).use {
             it.println("package $pkg;")
             it.println("public class $name extends com.topjohnwu.magisk.$type {}")
         }
     }
 
-    val cmps = mutableListOf<String>()
-    val usedNames = mutableListOf<String>()
-    val maps = StringBuilder()
+    // Generate 2 non redirect-able classes
+    genClass("DelegateComponentFactory")
+    genClass("DelegateApplication")
 
     for (gen in cmpList) {
         val name = genCmpName()
-        usedNames.add(name)
-        maps.append("|map.put(\"$name\", \"${gen.real}\");".ind(2))
-        maps.append('\n')
-        if (gen.stub.isNotEmpty()) {
-            if (gen.stub != "DelegateComponentFactory") {
-                maps.append("|internalMap.put(\"$name\", com.topjohnwu.magisk.${gen.stub}.class);".ind(2))
-                maps.append('\n')
-            }
-            if (gen.stub.startsWith("Delegate")) {
-                genClass(name, gen.stub)
-            }
-        }
-        if (gen.xml.isNotEmpty()) {
-            cmps.add(gen.xml.format(name))
-        }
+        cmps.add(gen.format(name))
     }
 
     // Shuffle the order of the components
     cmps.shuffle(RANDOM)
+
     val xml = File(srcDir, "AndroidManifest.xml").readText()
-    val genXml = xml.format(usedNames[0], usedNames[1], cmps.joinToString("\n\n"))
-
-    // Write mapping information to code
-    val mapping = File(srcDir, "Mapping.java").readText().format(maps)
-    PrintStream(File(mainPkgDir, "Mapping.java")).use {
-        it.print(mapping)
-    }
-
-    return genXml
+    return xml.format(usedNames[0], usedNames[1], cmps.joinToString("\n\n"))
 }
 
-fun genEncryptedResources(res: File, outDir: File) {
+fun genEncryptedResources(res: InputStream, outDir: File) {
     val mainPkgDir = File(outDir, "com/topjohnwu/magisk")
-    // Rename R.java
-    val r = File(mainPkgDir, "R.java").let {
-        val txt = it.readText()
-        it.delete()
-        txt
-    }
-    File(mainPkgDir, "R2.java").writeText(r.replace("class R", "class R2"))
+    mainPkgDir.mkdirs()
 
     // Generate iv and key
     val iv = ByteArray(16)
@@ -272,9 +230,8 @@ fun genEncryptedResources(res: File, outDir: File) {
     cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(iv))
     val bos = ByteArrayOutputStream()
 
-    FileInputStream(res).use {
-        // First compress, then encrypt
-        GZIPOutputStream(CipherOutputStream(bos, cipher)).use { os ->
+    res.use {
+        CipherOutputStream(bos, cipher).use { os ->
             it.transferTo(os)
         }
     }

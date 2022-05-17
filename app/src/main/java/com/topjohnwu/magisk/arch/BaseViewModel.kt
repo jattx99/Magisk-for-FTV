@@ -1,6 +1,9 @@
 package com.topjohnwu.magisk.arch
 
-import android.Manifest
+import android.Manifest.permission.REQUEST_INSTALL_PACKAGES
+import android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+import android.annotation.SuppressLint
+import android.os.Bundle
 import androidx.annotation.CallSuper
 import androidx.databinding.Bindable
 import androidx.databinding.Observable
@@ -56,6 +59,9 @@ abstract class BaseViewModel(
         isConnected.addOnPropertyChangedCallback(refreshCallback)
     }
 
+    open fun onSaveState(state: Bundle) {}
+    open fun onRestoreState(state: Bundle) {}
+
     /** This should probably never be called manually, it's called manually via delegate. */
     @Synchronized
     fun requestRefresh() {
@@ -77,10 +83,21 @@ abstract class BaseViewModel(
         PermissionEvent(permission, callback).publish()
     }
 
-    fun withExternalRW(callback: () -> Unit) {
-        withPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) {
+    inline fun withExternalRW(crossinline callback: () -> Unit) {
+        withPermission(WRITE_EXTERNAL_STORAGE) {
             if (!it) {
                 SnackbarEvent(R.string.external_rw_permission_denied).publish()
+            } else {
+                callback()
+            }
+        }
+    }
+
+    @SuppressLint("InlinedApi")
+    inline fun withInstallPermission(crossinline callback: () -> Unit) {
+        withPermission(REQUEST_INSTALL_PACKAGES) {
+            if (!it) {
+                SnackbarEvent(R.string.install_unknown_denied).publish()
             } else {
                 callback()
             }
@@ -98,8 +115,8 @@ abstract class BaseViewModel(
         _viewEvents.postValue(this)
     }
 
-    fun NavDirections.navigate() {
-        _viewEvents.postValue(NavigationEvent(this))
+    fun NavDirections.navigate(pop: Boolean = false) {
+        _viewEvents.postValue(NavigationEvent(this, pop))
     }
 
 }

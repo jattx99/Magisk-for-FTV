@@ -191,7 +191,6 @@ LOCAL_SRC_FILES := \
     selinux/libsepol/src/context.c \
     selinux/libsepol/src/context_record.c \
     selinux/libsepol/src/debug.c \
-    selinux/libsepol/src/deprecated_funcs.c \
     selinux/libsepol/src/ebitmap.c \
     selinux/libsepol/src/expand.c \
     selinux/libsepol/src/handle.c \
@@ -217,9 +216,9 @@ LOCAL_SRC_FILES := \
     selinux/libsepol/src/policydb.c \
     selinux/libsepol/src/policydb_convert.c \
     selinux/libsepol/src/policydb_public.c \
+    selinux/libsepol/src/policydb_validate.c \
     selinux/libsepol/src/port_record.c \
     selinux/libsepol/src/ports.c \
-    selinux/libsepol/src/roles.c \
     selinux/libsepol/src/services.c \
     selinux/libsepol/src/sidtab.c \
     selinux/libsepol/src/symtab.c \
@@ -246,8 +245,10 @@ LOCAL_SRC_FILES := \
     selinux/libsepol/cil/src/cil_strpool.c \
     selinux/libsepol/cil/src/cil_symtab.c \
     selinux/libsepol/cil/src/cil_tree.c \
-    selinux/libsepol/cil/src/cil_verify.c
-LOCAL_CFLAGS := -Dgetline=__getline -Wno-implicit-function-declaration
+    selinux/libsepol/cil/src/cil_verify.c \
+    selinux/libsepol/cil/src/cil_write_ast.c
+
+LOCAL_CFLAGS := -Wno-unused-but-set-variable
 include $(BUILD_STATIC_LIBRARY)
 
 # libselinux.a
@@ -259,7 +260,7 @@ LOCAL_EXPORT_C_INCLUDES := $(LIBSELINUX)
 LOCAL_STATIC_LIBRARIES := libpcre2
 LOCAL_CFLAGS := \
     -Wno-implicit-function-declaration -Wno-int-conversion -Wno-unused-function \
-    -Wno-macro-redefined -D_GNU_SOURCE -DUSE_PCRE2 \
+    -Wno-macro-redefined -Wno-unused-but-set-variable -D_GNU_SOURCE -DUSE_PCRE2 \
     -DNO_PERSISTENTLY_STORED_PATTERNS -DDISABLE_SETRANS -DDISABLE_BOOL \
     -DNO_MEDIA_BACKEND -DNO_X_BACKEND -DNO_DB_BACKEND -DNO_ANDROID_BACKEND \
     -Dfgets_unlocked=fgets -D'__fsetlocking(...)='
@@ -326,55 +327,55 @@ include $(BUILD_STATIC_LIBRARY)
 include $(CLEAR_VARS)
 LIBPCRE2 := $(LOCAL_PATH)/pcre/include
 LOCAL_MODULE:= libpcre2
-LOCAL_CFLAGS := -DHAVE_CONFIG_H
+LOCAL_CFLAGS := -DHAVE_CONFIG_H -DPCRE2_CODE_UNIT_WIDTH=8
 LOCAL_C_INCLUDES := $(LIBPCRE2) $(LIBPCRE2)_internal
 LOCAL_EXPORT_C_INCLUDES := $(LIBPCRE2)
 LOCAL_SRC_FILES := \
-    pcre/dist2/src/pcre2_auto_possess.c \
-    pcre/dist2/src/pcre2_chartables.c \
-    pcre/dist2/src/pcre2_compile.c \
-    pcre/dist2/src/pcre2_config.c \
-    pcre/dist2/src/pcre2_context.c \
-    pcre/dist2/src/pcre2_convert.c \
-    pcre/dist2/src/pcre2_dfa_match.c \
-    pcre/dist2/src/pcre2_error.c \
-    pcre/dist2/src/pcre2_extuni.c \
-    pcre/dist2/src/pcre2_find_bracket.c \
-    pcre/dist2/src/pcre2_fuzzsupport.c \
-    pcre/dist2/src/pcre2_jit_compile.c \
-    pcre/dist2/src/pcre2_maketables.c \
-    pcre/dist2/src/pcre2_match.c \
-    pcre/dist2/src/pcre2_match_data.c \
-    pcre/dist2/src/pcre2_newline.c \
-    pcre/dist2/src/pcre2_ord2utf.c \
-    pcre/dist2/src/pcre2_pattern_info.c \
-    pcre/dist2/src/pcre2_script_run.c \
-    pcre/dist2/src/pcre2_serialize.c \
-    pcre/dist2/src/pcre2_string_utils.c \
-    pcre/dist2/src/pcre2_study.c \
-    pcre/dist2/src/pcre2_substitute.c \
-    pcre/dist2/src/pcre2_substring.c \
-    pcre/dist2/src/pcre2_tables.c \
-    pcre/dist2/src/pcre2_ucd.c \
-    pcre/dist2/src/pcre2_valid_utf.c \
-    pcre/dist2/src/pcre2_xclass.c
+    pcre/src/pcre2_auto_possess.c \
+    pcre/src/pcre2_compile.c \
+    pcre/src/pcre2_config.c \
+    pcre/src/pcre2_context.c \
+    pcre/src/pcre2_convert.c \
+    pcre/src/pcre2_dfa_match.c \
+    pcre/src/pcre2_error.c \
+    pcre/src/pcre2_extuni.c \
+    pcre/src/pcre2_find_bracket.c \
+    pcre/src/pcre2_fuzzsupport.c \
+    pcre/src/pcre2_maketables.c \
+    pcre/src/pcre2_match.c \
+    pcre/src/pcre2_match_data.c \
+    pcre/src/pcre2_jit_compile.c \
+    pcre/src/pcre2_newline.c \
+    pcre/src/pcre2_ord2utf.c \
+    pcre/src/pcre2_pattern_info.c \
+    pcre/src/pcre2_script_run.c \
+    pcre/src/pcre2_serialize.c \
+    pcre/src/pcre2_string_utils.c \
+    pcre/src/pcre2_study.c \
+    pcre/src/pcre2_substitute.c \
+    pcre/src/pcre2_substring.c \
+    pcre/src/pcre2_tables.c \
+    pcre/src/pcre2_ucd.c \
+    pcre/src/pcre2_valid_utf.c \
+    pcre/src/pcre2_xclass.c \
+    pcre2_workaround.c
 include $(BUILD_STATIC_LIBRARY)
 
 # libxhook.a
 include $(CLEAR_VARS)
 LOCAL_MODULE:= libxhook
-LOCAL_C_INCLUDES := $(LOCAL_PATH)/xhook/libxhook/jni
+LOCAL_C_INCLUDES := $(LOCAL_PATH)/libxhook
 LOCAL_EXPORT_C_INCLUDES := $(LOCAL_C_INCLUDES)
 LOCAL_CFLAGS := -Wall -Wextra -Werror -fvisibility=hidden -D__android_log_print=magisk_log_print
 LOCAL_CONLYFLAGS := -std=c11
 LOCAL_SRC_FILES := \
-    xhook/libxhook/jni/xh_log.c \
-    xhook/libxhook/jni/xh_version.c \
-    xhook/libxhook/jni/xh_jni.c \
-    xhook/libxhook/jni/xhook.c \
-    xhook/libxhook/jni/xh_core.c \
-    xhook/libxhook/jni/xh_util.c \
-    xhook/libxhook/jni/xh_elf.c
+    libxhook/xh_log.c \
+    libxhook/xh_version.c \
+    libxhook/xh_jni.c \
+    libxhook/xhook.c \
+    libxhook/xh_core.c \
+    libxhook/xh_util.c \
+    libxhook/xh_elf.c
 include $(BUILD_STATIC_LIBRARY)
 
 # libz.a

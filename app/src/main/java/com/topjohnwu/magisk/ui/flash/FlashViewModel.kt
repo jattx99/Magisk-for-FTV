@@ -20,16 +20,14 @@ import com.topjohnwu.magisk.databinding.itemBindingOf
 import com.topjohnwu.magisk.databinding.set
 import com.topjohnwu.magisk.events.SnackbarEvent
 import com.topjohnwu.magisk.ktx.*
-import com.topjohnwu.magisk.view.Notifications
 import com.topjohnwu.superuser.CallbackList
-import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class FlashViewModel : BaseViewModel() {
 
     @get:Bindable
-    var showReboot = Shell.rootAccess()
+    var showReboot = Info.isRooted
         set(value) = set(value, field, { field = it }, BR.showReboot)
 
     private val _subtitle = MutableLiveData(R.string.flashing)
@@ -50,14 +48,13 @@ class FlashViewModel : BaseViewModel() {
     }
 
     fun startFlashing() {
-        val (action, uri, id) = args
-        if (id != -1)
-            Notifications.mgr.cancel(id)
+        val (action, uri) = args
 
         viewModelScope.launch {
             val result = when (action) {
                 Const.Value.FLASH_ZIP -> {
-                    FlashZip(uri!!, outItems, logItems).exec()
+                    uri ?: return@launch
+                    FlashZip(uri, outItems, logItems).exec()
                 }
                 Const.Value.UNINSTALL -> {
                     showReboot = false
@@ -106,9 +103,11 @@ class FlashViewModel : BaseViewModel() {
             val name = "magisk_install_log_%s.log".format(now.toTime(timeFormatStandard))
             val file = MediaStoreUtils.getFile(name, true)
             file.uri.outputStream().bufferedWriter().use { writer ->
-                logItems.forEach {
-                    writer.write(it)
-                    writer.newLine()
+                synchronized(logItems) {
+                    logItems.forEach {
+                        writer.write(it)
+                        writer.newLine()
+                    }
                 }
             }
             SnackbarEvent(file.toString()).publish()

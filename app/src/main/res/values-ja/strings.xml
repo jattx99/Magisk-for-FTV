@@ -5,11 +5,10 @@
     <string name="superuser">スーパーユーザー</string>
     <string name="logs">ログ</string>
     <string name="settings">設定</string>
-    <string name="refresh">ローカルデータの更新</string>
     <string name="install">インストール</string>
     <string name="section_home">ホーム</string>
     <string name="section_theme">テーマ</string>
-    <string name="safetynet">SafetyNet</string>
+    <string name="denylist">DenyList</string>
 
     <!--Home-->
     <string name="no_connection">インターネット接続なし</string>
@@ -30,11 +29,11 @@
     <string name="invalid_update_channel">不正な更新チャンネルです</string>
     <string name="uninstall_magisk_title">Magisk のアンインストール</string>
     <string name="uninstall_magisk_msg">すべてのモジュールが無効化/削除されます。\nアンインストール後は root が無効化され、ストレージが暗号化されていない場合、暗号化される場合があります。</string>
-    <string name="home_check_safetynet">SafetyNet のチェック</string>
 
     <!--Install-->
     <string name="keep_force_encryption">暗号化を維持する</string>
     <string name="keep_dm_verity">AVB 2.0/dm-verity を維持する</string>
+    <string name="patch_vbmeta">boot イメージ中の vbmeta をパッチする</string>
     <string name="recovery_mode">リカバリーモード</string>
     <string name="install_options_title">オプション</string>
     <string name="install_method_title">方法</string>
@@ -90,19 +89,11 @@
     <string name="target_uid">ターゲット UID: %1$d</string>
 
     <!--SafetyNet-->
-    <string name="safetynet_api_error">SafetyNet API エラー</string>
-    <string name="safetynet_res_invalid">応答が不正です</string>
-    <string name="safetynet_attest_success">成功!</string>
-    <string name="safetynet_attest_failure">認証失敗!</string>
-    <string name="safetynet_attest_loading">お待ちください…</string>
-    <string name="safetynet_attest_restart">やり直す</string>
 
     <!--MagiskHide-->
     <string name="show_system_app">システムアプリを表示</string>
     <string name="show_os_app">OS アプリを表示</string>
     <string name="hide_filter_hint">名前で絞り込み</string>
-    <string name="hide_scroll_up">上へ</string>
-    <string name="hide_filters">絞り込み</string>
     <string name="hide_search">検索</string>
 
     <!--Module-->
@@ -113,15 +104,13 @@
     <string name="reboot_download">Download へ再起動</string>
     <string name="reboot_edl">EDL へ再起動</string>
     <string name="module_version_author">%1$s 開発者：%2$s</string>
-    <string name="module_section_pending">更新</string>
-    <string name="module_section_pending_action">すべて更新</string>
     <string name="module_state_remove">削除</string>
     <string name="module_state_restore">復元</string>
     <string name="module_action_install_external">ストレージからインストール</string>
     <string name="update_available">更新あり</string>
-    <string name="module_installed">@string/home_installed_version</string>
-    <string name="module_section_online">未インストール</string>
-    <string name="sorting_order">並び順</string>
+    <string name="suspend_text_riru">モジュールは %1$s が有効化されているため休止しました</string>
+    <string name="suspend_text_zygisk">モジュールは %1$s が有効化されていないため休止しました</string>
+    <string name="zygisk_module_unloaded">互換性がないため Zygisk モジュールは読み込まれませんでした</string>
 
     <!--Settings-->
     <string name="settings_dark_mode_title">テーマ</string>
@@ -131,8 +120,6 @@
     <string name="settings_dark_mode_dark">ダークモード</string>
     <string name="settings_download_path_title">ファイルの保存場所</string>
     <string name="settings_download_path_message">ファイルは %1$s に保存されます</string>
-    <string name="settings_clear_cache_title">キャッシュを消去</string>
-    <string name="settings_clear_cache_summary">モジュールリポジトリのキャッシュを消去します</string>
     <string name="settings_hide_app_title">Magisk アプリを隠す</string>
     <string name="settings_hide_app_summary">ランダムなパッケージ ID と任意のアプリ名のプロキシアプリをインストールします</string>
     <string name="settings_restore_app_title">Magisk アプリを復元する</string>
@@ -146,7 +133,12 @@
     <string name="settings_update_beta">ベータ版</string>
     <string name="settings_update_custom">カスタム</string>
     <string name="settings_update_custom_msg">カスタム URL を入力</string>
-    <string name="settings_magiskhide_summary">さまざまな検出方法から Magisk を隠します</string>
+    <string name="settings_zygisk_summary">Magisk の一部を zygote デーモン上で実行する</string>
+    <string name="settings_denylist_title">DenyList を適用</string>
+    <string name="settings_denylist_summary">DenyList 内のプロセスは Magisk の変更がすべて戻されます</string>
+    <string name="settings_denylist_error">この機能を使用するには %1$s が有効化されている必要があります</string>
+    <string name="settings_denylist_config_title">DenyList を構成</string>
+    <string name="settings_denylist_config_summary">DenyList に含まれるプロセスを選択</string>
     <string name="settings_hosts_title">Systemless hosts</string>
     <string name="settings_hosts_summary">広告ブロックアプリのための Systemless hosts サポートを有効化します</string>
     <string name="settings_hosts_toast">Systemless hosts モジュールを追加しました</string>
@@ -205,12 +197,10 @@
     <!--Toasts, Dialogs-->
     <string name="yes">対応</string>
     <string name="no">非対応</string>
-    <string name="repo_install_title">%1$s をインストール</string>
-    <string name="repo_install_msg">%1$s をインストールしますか？</string>
+    <string name="repo_install_title">%1$s %2$s(%3$d) をインストール</string>
     <string name="download">ダウンロード</string>
     <string name="reboot">再起動</string>
     <string name="release_notes">更新履歴</string>
-    <string name="repo_cache_cleared">リポジトリのキャッシュを消去しました</string>
     <string name="flashing">書き込み中…</string>
     <string name="done">完了！</string>
     <string name="failure">失敗！</string>
@@ -221,8 +211,6 @@
     <string name="restore_img_msg">リストア中…</string>
     <string name="restore_done">リストア完了！</string>
     <string name="restore_fail">Stock のバックアップがありません！</string>
-    <string name="proprietary_title">プロプライエタリコードのダウンロード</string>
-    <string name="proprietary_notice">Magisk は FOSSであり、Google のプロプライエタリな SafetyNet API のコードは含まれていません。\n\nSafetyNet チェック用の拡張機能をダウンロードしますか？</string>
     <string name="setup_fail">セットアップに失敗しました</string>
     <string name="env_fix_title">追加のセットアップが必要です</string>
     <string name="env_fix_msg">Magisk を正常に動作させるために追加のセットアップが必要です。今すぐ再起動しますか？</string>
@@ -230,9 +218,17 @@
     <string name="authenticate">認証</string>
     <string name="unsupport_magisk_title">対応していない Magisk バージョンです</string>
     <string name="unsupport_magisk_msg">このバージョンのアプリではバージョン %1$s 以下の Magisk に対応していません。\n\nアプリで Magisk を使えないため、すぐに Magisk を更新してください</string>
+    <string name="unsupport_general_title">異常な状態です</string>
+    <string name="unsupport_system_app_msg">このアプリをシステムアプリとして起動することはサポートされていません。ユーザーアプリに戻してください。</string>
+    <string name="unsupport_other_su_msg">Magisk 以外の \"su\" バイナリが検出されました。競合する root 権限取得ソフトを削除し、Magisk をインストールし直してください。</string>
+    <string name="unsupport_external_storage_msg">Magisk が外部ストレージにインストールされています。内部ストレージに移動してください。</string>
+    <string name="unsupport_nonroot_stub_msg">root 権限が失われたため、Magisk の隠しアプリが動作できなくなりました。元の APK を復元してください。</string>
+    <string name="unsupport_nonroot_stub_title">@string/settings_restore_app_title</string>
     <string name="external_rw_permission_denied">この機能を有効にするにはストレージ権限を許可してください</string>
     <string name="add_shortcut_title">ホーム画面にショートカットを追加</string>
     <string name="add_shortcut_msg">アプリを隠すと、アプリ名やアイコンが判別しにくいことがあります。分かりやすいようホーム画面にショートカットを追加しますか？</string>
     <string name="app_not_found">このアクションを扱えるアプリがありません</string>
+    <string name="reboot_apply_change">再起動して変更を適用</string>
+    <string name="restore_app_confirmation">隠しアプリを元のアプリへと戻します。続行しますか?</string>
 
 </resources>

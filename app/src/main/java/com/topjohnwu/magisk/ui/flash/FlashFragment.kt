@@ -9,14 +9,14 @@ import android.view.*
 import androidx.navigation.NavDeepLinkBuilder
 import com.topjohnwu.magisk.MainDirections
 import com.topjohnwu.magisk.R
-import com.topjohnwu.magisk.arch.BaseUIFragment
+import com.topjohnwu.magisk.arch.BaseFragment
 import com.topjohnwu.magisk.core.Const
 import com.topjohnwu.magisk.core.cmp
 import com.topjohnwu.magisk.databinding.FragmentFlashMd2Binding
 import com.topjohnwu.magisk.di.viewModel
 import com.topjohnwu.magisk.ui.MainActivity
 
-class FlashFragment : BaseUIFragment<FlashViewModel, FragmentFlashMd2Binding>() {
+class FlashFragment : BaseFragment<FragmentFlashMd2Binding>() {
 
     override val layoutRes = R.layout.fragment_flash_md2
     override val viewModel by viewModel<FlashViewModel>()
@@ -31,10 +31,10 @@ class FlashFragment : BaseUIFragment<FlashViewModel, FragmentFlashMd2Binding>() 
     override fun onStart() {
         super.onStart()
         setHasOptionsMenu(true)
-        activity.setTitle(R.string.flash_screen_title)
+        activity?.setTitle(R.string.flash_screen_title)
 
         viewModel.subtitle.observe(this) {
-            activity.supportActionBar?.setSubtitle(it)
+            activity?.supportActionBar?.setSubtitle(it)
         }
     }
 
@@ -49,15 +49,17 @@ class FlashFragment : BaseUIFragment<FlashViewModel, FragmentFlashMd2Binding>() 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        defaultOrientation = activity.requestedOrientation
-        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_NOSENSOR
-        viewModel.startFlashing()
+        defaultOrientation = activity?.requestedOrientation ?: -1
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_NOSENSOR
+        if (savedInstanceState == null) {
+            viewModel.startFlashing()
+        }
     }
 
     @SuppressLint("WrongConstant")
     override fun onDestroyView() {
         if (defaultOrientation != -1) {
-            activity.requestedOrientation = defaultOrientation
+            activity?.requestedOrientation = defaultOrientation
         }
         super.onDestroyView()
     }
@@ -111,16 +113,14 @@ class FlashFragment : BaseUIFragment<FlashViewModel, FragmentFlashMd2Binding>() 
 
         /* Installing is understood as flashing modules / zips */
 
-        fun installIntent(context: Context, file: Uri, id: Int = -1) = FlashFragmentArgs(
+        fun installIntent(context: Context, file: Uri) = FlashFragmentArgs(
             action = Const.Value.FLASH_ZIP,
             additionalData = file,
-            dismissId = id
         ).let { createIntent(context, it) }
 
-        fun install(file: Uri, id: Int) = MainDirections.actionFlashFragment(
+        fun install(file: Uri) = MainDirections.actionFlashFragment(
             action = Const.Value.FLASH_ZIP,
             additionalData = file,
-            dismissId = id
         )
     }
 

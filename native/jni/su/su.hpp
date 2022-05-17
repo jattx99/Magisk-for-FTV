@@ -15,26 +15,29 @@
 
 class su_info {
 public:
-    /* Unique key */
+    // Unique key
     const int uid;
 
-    /* These should be guarded with internal lock */
+    // These should be guarded with internal lock
+    int eval_uid;  // The effective UID, taking multiuser settings into consideration
     db_settings cfg;
-    db_strings str;
     su_access access;
+    std::string mgr_pkg;
     struct stat mgr_st;
+    void check_db();
 
-    /* This should be guarded with global cache lock */
-    long timestamp;
-
-    su_info(unsigned uid = 0);
-    ~su_info();
-    mutex_guard lock();
+    // These should be guarded with global cache lock
     bool is_fresh();
     void refresh();
 
+    su_info(int uid);
+    ~su_info();
+    mutex_guard lock();
+
 private:
-    pthread_mutex_t _lock;  /* Internal lock */
+    long timestamp;
+    // Internal lock
+    pthread_mutex_t _lock;
 };
 
 struct su_req_base {
@@ -57,4 +60,4 @@ struct su_context {
 
 void app_log(const su_context &ctx);
 void app_notify(const su_context &ctx);
-int app_request(const std::shared_ptr<su_info> &info);
+int app_request(const su_context &ctx);

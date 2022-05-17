@@ -1,18 +1,16 @@
 package com.topjohnwu.magisk.events.dialog
 
 import com.topjohnwu.magisk.arch.ActivityExecutor
-import com.topjohnwu.magisk.arch.BaseUIActivity
+import com.topjohnwu.magisk.arch.UIActivity
 import com.topjohnwu.magisk.arch.ViewEvent
 import com.topjohnwu.magisk.view.MagiskDialog
 
 abstract class DialogEvent : ViewEvent(), ActivityExecutor {
 
-    protected lateinit var dialog: MagiskDialog
-
-    override fun invoke(activity: BaseUIActivity<*, *>) {
-        dialog = MagiskDialog(activity)
+    override fun invoke(activity: UIActivity<*>) {
+        MagiskDialog(activity)
             .apply { setOwnerActivity(activity) }
-            .apply(this::build).reveal()
+            .apply(this::build).show()
     }
 
     abstract fun build(dialog: MagiskDialog)

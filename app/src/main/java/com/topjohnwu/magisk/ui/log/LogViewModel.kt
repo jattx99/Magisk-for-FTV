@@ -62,15 +62,20 @@ class LogViewModel(
             val filename = "magisk_log_%s.log".format(now.toTime(timeFormatStandard))
             val logFile = MediaStoreUtils.getFile(filename, true)
             logFile.uri.outputStream().bufferedWriter().use { file ->
-                file.write("---System Properties---\n\n")
+                file.write("---Detected Device Info---\n\n")
+                file.write("isAB=${Info.isAB}\n")
+                file.write("isSAR=${Info.isSAR}\n")
+                file.write("ramdisk=${Info.ramdisk}\n")
+
+                file.write("\n\n---System Properties---\n\n")
                 ProcessBuilder("getprop").start()
                     .inputStream.reader().use { it.copyTo(file) }
 
-                file.write("---System MountInfo---\n\n")
+                file.write("\n\n---System MountInfo---\n\n")
                 FileInputStream("/proc/self/mountinfo").reader().use { it.copyTo(file) }
 
                 file.write("\n---Magisk Logs---\n")
-                file.write("${Info.env.magiskVersionString} (${Info.env.magiskVersionCode})\n\n")
+                file.write("${Info.env.versionString} (${Info.env.versionCode})\n\n")
                 file.write(consoleText)
 
                 file.write("\n---Manager Logs---\n")

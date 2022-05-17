@@ -1,36 +1,31 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
-#include <utils.hpp>
+#include <base.hpp>
 #include <selinux.hpp>
 
 #include "su.hpp"
+#include "daemon.hpp"
+
+extern int SDK_INT;
 
 using namespace std;
 
-enum {
-    NAMED_ACTIVITY,
-    PKG_ACTIVITY,
-    CONTENT_PROVIDER
-};
-
 #define CALL_PROVIDER \
-"/system/bin/app_process", "/system/bin", "com.android.commands.content.Content", \
+exe, "/system/bin", "com.android.commands.content.Content", \
 "call", "--uri", target, "--user", user, "--method", action
 
 #define START_ACTIVITY \
-"/system/bin/app_process", "/system/bin", "com.android.commands.am.Am", \
+exe, "/system/bin", "com.android.commands.am.Am", \
 "start", "-p", target, "--user", user, "-a", "android.intent.action.VIEW", \
 "-f", "0x18000020", "--es", "action", action
 
 // 0x18000020 = FLAG_ACTIVITY_NEW_TASK|FLAG_ACTIVITY_MULTIPLE_TASK|FLAG_INCLUDE_STOPPED_PACKAGES
 
-#define get_user(info) \
-(info->cfg[SU_MULTIUSER_MODE] == MULTIUSER_MODE_USER \
-? info->uid / 100000 : 0)
-
 #define get_cmd(to) \
-(to.command.empty() ? (to.shell.empty() ? DEFAULT_SHELL : to.shell.data()) : to.command.data())
+((to).command.empty() ? \
+((to).shell.empty() ? DEFAULT_SHELL : (to).shell.data()) : \
+(to).command.data())
 
 class Extra {
     const char *key;
@@ -44,47 +39,62 @@ class Extra {
         bool bool_val;
         const char *str_val;
     };
-    char buf[32];
+    string str;
 public:
     Extra(const char *k, int v): key(k), type(INT), int_val(v) {}
     Extra(const char *k, bool v): key(k), type(BOOL), bool_val(v) {}
     Extra(const char *k, const char *v): key(k), type(STRING), str_val(v) {}
 
     void add_intent(vector<const char *> &vec) {
+        char buf[32];
         const char *val;
         switch (type) {
-            case INT:
-                vec.push_back("--ei");
-                sprintf(buf, "%d", int_val);
-                val = buf;
-                break;
-            case BOOL:
-                vec.push_back("--ez");
-                val = bool_val ? "true" : "false";
-                break;
-            case STRING:
-                vec.push_back("--es");
-                val = str_val;
-                break;
+        case INT:
+            vec.push_back("--ei");
+            snprintf(buf, sizeof(buf), "%d", int_val);
+            str = buf;
+            val = str.data();
+            break;
+        case BOOL:
+            vec.push_back("--ez");
+            val = bool_val ? "true" : "false";
+            break;
+        case STRING:
+            vec.push_back("--es");
+            val = str_val;
+            break;
         }
         vec.push_back(key);
         vec.push_back(val);
     }
 
     void add_bind(vector<const char *> &vec) {
+        char buf[32];
+        str = key;
         switch (type) {
-            case INT:
-                sprintf(buf, "%s:i:%d", key, int_val);
-                break;
-            case BOOL:
-                sprintf(buf, "%s:b:%s", key, bool_val ? "true" : "false");
-                break;
-            case STRING:
-                sprintf(buf, "%s:s:%s", key, str_val);
-                break;
+        case INT:
+            str += ":i:";
+            snprintf(buf, sizeof(buf), "%d", int_val);
+            str += buf;
+            break;
+        case BOOL:
+            str += ":b:";
+            str += bool_val ? "true" : "false";
+            break;
+        case STRING:
+            str += ":s:";
+            if (SDK_INT >= 30) {
+                string tmp = str_val;
+                replace_all(tmp, "\\", "\\\\");
+                replace_all(tmp, ":", "\\:");
+                str += tmp;
+            } else {
+                str += str_val;
+            }
+            break;
         }
         vec.push_back("--extra");
-        vec.push_back(buf);
+        vec.push_back(str.data());
     }
 };
 
@@ -99,14 +109,25 @@ static bool check_no_error(int fd) {
 }
 
 static void exec_cmd(const char *action, vector<Extra> &data,
-                     const shared_ptr<su_info> &info, int mode = CONTENT_PROVIDER) {
+                     const shared_ptr<su_info> &info, bool provider = true) {
+    char exe[128];
     char target[128];
     char user[4];
-    sprintf(user, "%d", get_user(info));
+    snprintf(user, sizeof(user), "%d", to_user_id(info->eval_uid));
+
+    if (zygisk_enabled) {
+#if defined(__LP64__)
+        snprintf(exe, sizeof(exe), "/proc/self/fd/%d", app_process_64);
+#else
+        snprintf(exe, sizeof(exe), "/proc/self/fd/%d", app_process_32);
+#endif
+    } else {
+        strlcpy(exe, "/system/bin/app_process", sizeof(exe));
+    }
 
     // First try content provider call method
-    if (mode >= CONTENT_PROVIDER) {
-        sprintf(target, "content://%s.provider", info->str[SU_MANAGER].data());
+    if (provider) {
+        snprintf(target, sizeof(target), "content://%s.provider", info->mgr_pkg.data());
         vector<const char *> args{ CALL_PROVIDER };
         for (auto &e : data) {
             e.add_bind(args);
@@ -135,17 +156,15 @@ static void exec_cmd(const char *action, vector<Extra> &data,
         .argv = args.data()
     };
 
-    if (mode >= PKG_ACTIVITY) {
-        // Then try start activity without component name
-        strcpy(target, info->str[SU_MANAGER].data());
-        exec_command_sync(exec);
-        if (check_no_error(exec.fd))
-            return;
-    }
+    // Then try start activity without package name
+    strlcpy(target, info->mgr_pkg.data(), sizeof(target));
+    exec_command_sync(exec);
+    if (check_no_error(exec.fd))
+        return;
 
     // Finally, fallback to start activity with component name
     args[4] = "-n";
-    sprintf(target, "%s/.ui.surequest.SuRequestActivity", info->str[SU_MANAGER].data());
+    snprintf(target, sizeof(target), "%s/.ui.surequest.SuRequestActivity", info->mgr_pkg.data());
     exec.fd = -2;
     exec.fork = fork_dont_care;
     exec_command(exec);
@@ -170,8 +189,9 @@ void app_log(const su_context &ctx) {
 void app_notify(const su_context &ctx) {
     if (fork_dont_care() == 0) {
         vector<Extra> extras;
-        extras.reserve(2);
+        extras.reserve(3);
         extras.emplace_back("from.uid", ctx.info->uid);
+        extras.emplace_back("pid", ctx.pid);
         extras.emplace_back("policy", ctx.info->access.policy);
 
         exec_cmd("notify", extras, ctx.info);
@@ -179,27 +199,28 @@ void app_notify(const su_context &ctx) {
     }
 }
 
-int app_request(const shared_ptr<su_info> &info) {
+int app_request(const su_context &ctx) {
     // Create FIFO
     char fifo[64];
     strcpy(fifo, "/dev/socket/");
     gen_rand_str(fifo + 12, 32, true);
     mkfifo(fifo, 0600);
-    chown(fifo, info->mgr_st.st_uid, info->mgr_st.st_gid);
+    chown(fifo, ctx.info->mgr_st.st_uid, ctx.info->mgr_st.st_gid);
     setfilecon(fifo, "u:object_r:" SEPOL_FILE_TYPE ":s0");
 
     // Send request
     vector<Extra> extras;
-    extras.reserve(2);
+    extras.reserve(3);
     extras.emplace_back("fifo", fifo);
-    extras.emplace_back("uid", info->uid);
-    exec_cmd("request", extras, info, PKG_ACTIVITY);
+    extras.emplace_back("uid", ctx.info->eval_uid);
+    extras.emplace_back("pid", ctx.pid);
+    exec_cmd("request", extras, ctx.info, false);
 
     // Wait for data input for at most 70 seconds
-    int fd = xopen(fifo, O_RDONLY | O_CLOEXEC);
+    int fd = xopen(fifo, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
     struct pollfd pfd = {
         .fd = fd,
-        .events = POLL_IN
+        .events = POLLIN
     };
     if (xpoll(&pfd, 1, 70 * 1000) <= 0) {
         close(fd);

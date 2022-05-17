@@ -1,69 +1,53 @@
 package com.topjohnwu.magisk.core.magiskdb
 
-import android.content.pm.PackageManager
 import com.topjohnwu.magisk.core.Const
 import com.topjohnwu.magisk.core.model.su.SuPolicy
-import com.topjohnwu.magisk.core.model.su.toMap
-import com.topjohnwu.magisk.core.model.su.toPolicy
 import com.topjohnwu.magisk.di.AppContext
-import com.topjohnwu.magisk.ktx.now
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
-import timber.log.Timber
 import java.util.concurrent.TimeUnit
 
+class PolicyDao : MagiskDB() {
 
-class PolicyDao : BaseDao() {
-
-    override val table: String = Table.POLICY
-
-    suspend fun deleteOutdated() = buildQuery<Delete> {
-        condition {
-            greaterThan("until", "0")
-            and {
-                lessThan("until", TimeUnit.MILLISECONDS.toSeconds(now).toString())
-            }
-            or {
-                lessThan("until", "0")
-            }
-        }
-    }.commit()
-
-    suspend fun delete(uid: Int) = buildQuery<Delete> {
-        condition {
-            equals("uid", uid)
-        }
-    }.commit()
-
-    suspend fun fetch(uid: Int) = buildQuery<Select> {
-        condition {
-            equals("uid", uid)
-        }
-    }.query().first().toPolicyOrNull()
-
-    suspend fun update(policy: SuPolicy) = buildQuery<Replace> {
-        values(policy.toMap())
-    }.commit()
-
-    suspend fun <R: Any> fetchAll(mapper: (SuPolicy) -> R) = buildQuery<Select> {
-        condition {
-            equals("uid/100000", Const.USER_ID)
-        }
-    }.query {
-        it.toPolicyOrNull()?.let(mapper)
+    suspend fun deleteOutdated() {
+        val nowSeconds = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis())
+        val query = "DELETE FROM ${Table.POLICY} WHERE " +
+            "(until > 0 AND until < $nowSeconds) OR until < 0"
+        exec(query)
     }
 
-    private fun Map<String, String>.toPolicyOrNull(): SuPolicy? {
-        return runCatching { toPolicy(AppContext.packageManager) }.getOrElse {
-            Timber.e(it)
-            if (it is PackageManager.NameNotFoundException) {
-                val uid = getOrElse("uid") { null } ?: return null
-                GlobalScope.launch {
-                    delete(uid.toInt())
-                }
-            }
-            null
+    suspend fun delete(uid: Int) {
+        val query = "DELETE FROM ${Table.POLICY} WHERE uid == $uid"
+        exec(query)
+    }
+
+    suspend fun fetch(uid: Int): SuPolicy? {
+        val query = "SELECT * FROM ${Table.POLICY} WHERE uid == $uid LIMIT = 1"
+        return exec(query, ::toPolicy).firstOrNull()
+    }
+
+    suspend fun update(policy: SuPolicy) {
+        val map = policy.toMap()
+        if (!Const.Version.isCanary()) {
+            // Put in package_name for old database
+            map["package_name"] = AppContext.packageManager.getNameForUid(policy.uid)!!
         }
+        val query = "REPLACE INTO ${Table.POLICY} ${map.toQuery()}"
+        exec(query)
+    }
+
+    suspend fun fetchAll(): List<SuPolicy> {
+        val query = "SELECT * FROM ${Table.POLICY} WHERE uid/100000 == ${Const.USER_ID}"
+        return exec(query, ::toPolicy).filterNotNull()
+    }
+
+    private fun toPolicy(map: Map<String, String>): SuPolicy? {
+        val uid = map["uid"]?.toInt() ?: return null
+        val policy = SuPolicy(uid)
+
+        map["policy"]?.toInt()?.let { policy.policy = it }
+        map["until"]?.toLong()?.let { policy.until = it }
+        map["logging"]?.toInt()?.let { policy.logging = it != 0 }
+        map["notification"]?.toInt()?.let { policy.notification = it != 0 }
+        return policy
     }
 
 }

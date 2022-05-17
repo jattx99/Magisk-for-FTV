@@ -7,18 +7,19 @@
 
         <variable
             name="item"
-            type="com.topjohnwu.magisk.ui.hide.HideProcessRvItem" />
+            type="com.topjohnwu.magisk.ui.deny.ProcessRvItem" />
 
         <variable
             name="viewModel"
-            type="com.topjohnwu.magisk.ui.hide.HideViewModel" />
+            type="com.topjohnwu.magisk.ui.deny.DenyListViewModel" />
 
     </data>
 
     <androidx.constraintlayout.widget.ConstraintLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:onClick="@{() -> item.toggle()}">
+        android:layout_gravity="center"
+        android:alpha="@{item.enabled ? 1f : .7f}">
 
         <androidx.appcompat.widget.AppCompatTextView
             android:layout_width="0dp"
@@ -35,12 +36,12 @@
             app:layout_constraintTop_toTopOf="parent"
             tools:text="com.topjohnwu.magisk.process" />
 
-        <androidx.appcompat.widget.AppCompatImageView
-            android:id="@+id/hide_process_icon"
-            android:focusable="true"
-            android:clickable="true"
-            style="@style/Widget.Icon"
-            isChecked="@{item.isHidden}"
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/hide_process_checkbox"
+            android:checked="@={item.enabled}"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="@dimen/l_50"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toTopOf="parent"

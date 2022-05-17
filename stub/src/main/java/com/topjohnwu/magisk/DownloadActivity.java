@@ -3,21 +3,19 @@ package com.topjohnwu.magisk;
 import static android.R.string.no;
 import static android.R.string.ok;
 import static android.R.string.yes;
-import static com.topjohnwu.magisk.DelegateApplication.dynLoad;
-import static com.topjohnwu.magisk.R2.string.dling;
-import static com.topjohnwu.magisk.R2.string.no_internet_msg;
-import static com.topjohnwu.magisk.R2.string.relaunch_app;
-import static com.topjohnwu.magisk.R2.string.upgrade_msg;
+import static com.topjohnwu.magisk.R.string.dling;
+import static com.topjohnwu.magisk.R.string.no_internet_msg;
+import static com.topjohnwu.magisk.R.string.upgrade_msg;
 
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.Context;
+import android.content.Intent;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.ContextThemeWrapper;
-import android.widget.Toast;
 
 import com.topjohnwu.magisk.net.Networking;
 import com.topjohnwu.magisk.net.Request;
@@ -28,9 +26,7 @@ import org.json.JSONException;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.util.zip.GZIPInputStream;
+import java.io.IOException;
 
 import javax.crypto.Cipher;
 import javax.crypto.CipherInputStream;
@@ -44,19 +40,35 @@ import io.michaelrocks.paranoid.Obfuscate;
 public class DownloadActivity extends Activity {
 
     private static final String APP_NAME = "Magisk";
-    private static final String CANARY_URL = "https://topjohnwu.github.io/magisk-files/canary.json";
+    private static final String JSON_URL = BuildConfig.DEBUG ?
+            "https://topjohnwu.github.io/magisk-files/debug.json" :
+            "https://topjohnwu.github.io/magisk-files/canary.json";
 
     private String apkLink = BuildConfig.APK_URL;
     private Context themed;
     private ProgressDialog dialog;
+    private boolean dynLoad;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (DelegateClassLoader.cl instanceof AppClassLoader) {
+            // For some reason activity is created before Application.attach(),
+            // relaunch the activity using the same intent
+            finishAffinity();
+            startActivity(getIntent());
+            return;
+        }
+
         themed = new ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault);
+
+        // Only download and dynamic load full APK if hidden
+        dynLoad = !getPackageName().equals(BuildConfig.APPLICATION_ID);
 
         // Inject resources
         loadResources();
+
+        ProviderInstaller.install(this);
 
         if (Networking.checkNetworkStatus(this)) {
             if (apkLink == null) {
@@ -95,7 +107,7 @@ public class DownloadActivity extends Activity {
 
     private void fetchCanary() {
         dialog = ProgressDialog.show(themed, "", "", true);
-        request(CANARY_URL).getAsJSONObject(json -> {
+        request(JSON_URL).getAsJSONObject(json -> {
             dialog.dismiss();
             try {
                 apkLink = json.getJSONObject("magisk").getString("link");
@@ -109,23 +121,23 @@ public class DownloadActivity extends Activity {
     private void dlAPK() {
         dialog = ProgressDialog.show(themed, getString(dling), getString(dling) + " " + APP_NAME, true);
         // Download and upgrade the app
-        File apk = dynLoad ? DynAPK.current(this) : new File(getCacheDir(), "manager.apk");
-        request(apkLink).setExecutor(AsyncTask.THREAD_POOL_EXECUTOR).getAsFile(apk, file -> {
-            if (dynLoad) {
-                InjectAPK.setup(this);
-                runOnUiThread(() -> {
-                    dialog.dismiss();
-                    Toast.makeText(themed, relaunch_app, Toast.LENGTH_LONG).show();
-                    finish();
-                });
-            } else {
-                runOnUiThread(() -> {
-                    dialog.dismiss();
-                    APKInstall.install(this, file);
-                    finish();
-                });
-            }
-        });
+        var request = request(apkLink).setExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+        if (dynLoad) {
+            request.getAsFile(StubApk.current(this), file -> StubApk.restartProcess(this));
+        } else {
+            request.getAsInputStream(input -> {
+                var session = APKInstall.startSession(this);
+                try (input; var out = session.openStream(this)) {
+                    if (out != null)
+                        APKInstall.transfer(input, out);
+                } catch (IOException e) {
+                    error(e);
+                }
+                Intent intent = session.waitIntent();
+                if (intent != null)
+                    startActivity(intent);
+            });
+        }
     }
 
     private void loadResources() {
@@ -135,18 +147,13 @@ public class DownloadActivity extends Activity {
             SecretKey key = new SecretKeySpec(Bytes.key(), "AES");
             IvParameterSpec iv = new IvParameterSpec(Bytes.iv());
             cipher.init(Cipher.DECRYPT_MODE, key, iv);
-            InputStream is = new CipherInputStream(new ByteArrayInputStream(Bytes.res()), cipher);
-            try (InputStream gzip = new GZIPInputStream(is);
-                 OutputStream out = new FileOutputStream(apk)) {
-                byte[] buf = new byte[4096];
-                for (int read; (read = gzip.read(buf)) >= 0;) {
-                    out.write(buf, 0, read);
-                }
+            var is = new CipherInputStream(new ByteArrayInputStream(Bytes.res()), cipher);
+            var out = new FileOutputStream(apk);
+            try (is; out) {
+                APKInstall.transfer(is, out);
             }
-            DynAPK.addAssetPath(getResources().getAssets(), apk.getPath());
-        } catch (Exception e) {
-            // Should not happen
-            e.printStackTrace();
+            StubApk.addAssetPath(getResources().getAssets(), apk.getPath());
+        } catch (Exception ignored) {
         }
     }
 

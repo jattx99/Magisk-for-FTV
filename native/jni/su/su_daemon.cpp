@@ -7,7 +7,7 @@
 
 #include <daemon.hpp>
 #include <magisk.hpp>
-#include <utils.hpp>
+#include <base.hpp>
 #include <selinux.hpp>
 #include <db.hpp>
 
@@ -19,9 +19,9 @@ using namespace std;
 static pthread_mutex_t cache_lock = PTHREAD_MUTEX_INITIALIZER;
 static shared_ptr<su_info> cached;
 
-su_info::su_info(unsigned uid) :
-        uid(uid), access(DEFAULT_SU_ACCESS), mgr_st({}),
-        timestamp(0), _lock(PTHREAD_MUTEX_INITIALIZER) {}
+su_info::su_info(int uid) :
+uid(uid), eval_uid(-1), access(DEFAULT_SU_ACCESS), mgr_st{},
+timestamp(0), _lock(PTHREAD_MUTEX_INITIALIZER) {}
 
 su_info::~su_info() {
     pthread_mutex_destroy(&_lock);
@@ -44,33 +44,97 @@ void su_info::refresh() {
     timestamp = ts.tv_sec * 1000L + ts.tv_nsec / 1000000L;
 }
 
-static void database_check(const shared_ptr<su_info> &info) {
-    int uid = info->uid;
-    get_db_settings(info->cfg);
-    get_db_strings(info->str);
+void su_info::check_db() {
+    eval_uid = uid;
+    get_db_settings(cfg);
 
     // Check multiuser settings
-    switch (info->cfg[SU_MULTIUSER_MODE]) {
-        case MULTIUSER_MODE_OWNER_ONLY:
-            if (info->uid / 100000) {
-                uid = -1;
-                info->access = NO_SU_ACCESS;
-            }
-            break;
-        case MULTIUSER_MODE_OWNER_MANAGED:
-            uid = info->uid % 100000;
-            break;
-        case MULTIUSER_MODE_USER:
-        default:
-            break;
+    switch (cfg[SU_MULTIUSER_MODE]) {
+    case MULTIUSER_MODE_OWNER_ONLY:
+        if (to_user_id(uid) != 0) {
+            eval_uid = -1;
+            access = NO_SU_ACCESS;
+        }
+        break;
+    case MULTIUSER_MODE_OWNER_MANAGED:
+        eval_uid = to_app_id(uid);
+        break;
+    case MULTIUSER_MODE_USER:
+    default:
+        break;
     }
 
-    if (uid > 0)
-        get_uid_policy(info->access, uid);
+    if (eval_uid > 0) {
+        char query[256], *err;
+        snprintf(query, sizeof(query),
+            "SELECT policy, logging, notification FROM policies "
+            "WHERE uid=%d AND (until=0 OR until>%li)", eval_uid, time(nullptr));
+        err = db_exec(query, [&](db_row &row) -> bool {
+            access.policy = (policy_t) parse_int(row["policy"]);
+            access.log = parse_int(row["logging"]);
+            access.notify = parse_int(row["notification"]);
+            LOGD("magiskdb: query policy=[%d] log=[%d] notify=[%d]\n",
+                 access.policy, access.log, access.notify);
+            return true;
+        });
+        db_err_cmd(err, return);
+    }
 
     // We need to check our manager
-    if (info->access.log || info->access.notify)
-        validate_manager(info->str[SU_MANAGER], uid / 100000, &info->mgr_st);
+    if (access.log || access.notify)
+        get_manager(to_user_id(eval_uid), &mgr_pkg, &mgr_st);
+}
+
+bool uid_granted_root(int uid) {
+    if (uid == UID_ROOT)
+        return true;
+
+    db_settings cfg;
+    get_db_settings(cfg);
+
+    // Check user root access settings
+    switch (cfg[ROOT_ACCESS]) {
+    case ROOT_ACCESS_DISABLED:
+        return false;
+    case ROOT_ACCESS_APPS_ONLY:
+        if (uid == UID_SHELL)
+            return false;
+        break;
+    case ROOT_ACCESS_ADB_ONLY:
+        if (uid != UID_SHELL)
+            return false;
+        break;
+    case ROOT_ACCESS_APPS_AND_ADB:
+        break;
+    }
+
+    // Check multiuser settings
+    switch (cfg[SU_MULTIUSER_MODE]) {
+    case MULTIUSER_MODE_OWNER_ONLY:
+        if (to_user_id(uid) != 0)
+            return false;
+        break;
+    case MULTIUSER_MODE_OWNER_MANAGED:
+        uid = to_app_id(uid);
+        break;
+    case MULTIUSER_MODE_USER:
+    default:
+        break;
+    }
+
+    bool granted = false;
+
+    char query[256], *err;
+    snprintf(query, sizeof(query),
+        "SELECT policy FROM policies WHERE uid=%d AND (until=0 OR until>%li)",
+        uid, time(nullptr));
+    err = db_exec(query, [&](db_row &row) -> bool {
+        granted = parse_int(row["policy"]) == ALLOW;
+        return true;
+    });
+    db_err_cmd(err, return false);
+
+    return granted;
 }
 
 static shared_ptr<su_info> get_su_info(unsigned uid) {
@@ -90,10 +154,10 @@ static shared_ptr<su_info> get_su_info(unsigned uid) {
 
     if (info->access.policy == QUERY) {
         // Not cached, get data from database
-        database_check(info);
+        info->check_db();
 
         // If it's root or the manager, allow it silently
-        if (info->uid == UID_ROOT || (info->uid % 100000) == (info->mgr_st.st_uid % 100000)) {
+        if (info->uid == UID_ROOT || to_app_id(info->uid) == to_app_id(info->mgr_st.st_uid)) {
             info->access = SILENT_SU_ACCESS;
             return info;
         }
@@ -125,24 +189,11 @@ static shared_ptr<su_info> get_su_info(unsigned uid) {
             return info;
 
         // If still not determined, check if manager exists
-        if (info->str[SU_MANAGER].empty()) {
+        if (info->mgr_pkg.empty()) {
             info->access = NO_SU_ACCESS;
             return info;
         }
-    } else {
-        return info;
     }
-
-    // If still not determined, ask manager
-    int fd = app_request(info);
-    if (fd < 0) {
-        info->access.policy = DENY;
-    } else {
-        int ret = read_int_be(fd);
-        info->access.policy = ret < 0 ? DENY : static_cast<policy_t>(ret);
-        close(fd);
-    }
-
     return info;
 }
 
@@ -159,19 +210,37 @@ static void set_identity(unsigned uid) {
     }
 }
 
-void su_daemon_handler(int client, struct ucred *credential) {
-    LOGD("su: request from pid=[%d], client=[%d]\n", credential->pid, client);
+void su_daemon_handler(int client, const sock_cred *cred) {
+    LOGD("su: request from pid=[%d], client=[%d]\n", cred->pid, client);
 
     su_context ctx = {
-        .info = get_su_info(credential->uid),
+        .info = get_su_info(cred->uid),
         .req = su_request(),
-        .pid = credential->pid
+        .pid = cred->pid
     };
 
     // Read su_request
-    xxread(client, &ctx.req, sizeof(su_req_base));
-    read_string(client, ctx.req.shell);
-    read_string(client, ctx.req.command);
+    if (xxread(client, &ctx.req, sizeof(su_req_base)) < 0
+        || !read_string(client, ctx.req.shell)
+        || !read_string(client, ctx.req.command)) {
+        LOGW("su: remote process probably died, abort\n");
+        ctx.info.reset();
+        write_int(client, DENY);
+        close(client);
+        return;
+    }
+
+    // If still not determined, ask manager
+    if (ctx.info->access.policy == QUERY) {
+        int fd = app_request(ctx);
+        if (fd < 0) {
+            ctx.info->access.policy = DENY;
+        } else {
+            int ret = read_int_be(fd);
+            ctx.info->access.policy = ret < 0 ? DENY : static_cast<policy_t>(ret);
+            close(fd);
+        }
+    }
 
     if (ctx.info->access.log)
         app_log(ctx);
@@ -241,10 +310,19 @@ void su_daemon_handler(int client, struct ucred *credential) {
             ptmx = magiskpts + "/ptmx";
         }
         int ptmx_fd = xopen(ptmx.data(), O_RDWR);
-        int unlock = 0;
-        ioctl(ptmx_fd, TIOCSPTLCK, &unlock);
-        send_fd(client, ptmx_fd);
+        grantpt(ptmx_fd);
+        unlockpt(ptmx_fd);
         int pty_num = get_pty_num(ptmx_fd);
+        if (pty_num < 0) {
+            // Kernel issue? Fallback to /dev/pts
+            close(ptmx_fd);
+            pts = "/dev/pts";
+            ptmx_fd = xopen("/dev/ptmx", O_RDWR);
+            grantpt(ptmx_fd);
+            unlockpt(ptmx_fd);
+            pty_num = get_pty_num(ptmx_fd);
+        }
+        send_fd(client, ptmx_fd);
         close(ptmx_fd);
 
         string pts_slave = pts + "/" + to_string(pty_num);
@@ -306,7 +384,9 @@ void su_daemon_handler(int client, struct ucred *credential) {
     umask(022);
     char path[32];
     snprintf(path, sizeof(path), "/proc/%d/cwd", ctx.pid);
-    chdir(path);
+    char cwd[PATH_MAX];
+    if (realpath(path, cwd))
+        chdir(cwd);
     snprintf(path, sizeof(path), "/proc/%d/environ", ctx.pid);
     char buf[4096] = { 0 };
     int fd = xopen(path, O_RDONLY);

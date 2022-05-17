@@ -21,7 +21,6 @@ import com.topjohnwu.magisk.R
 import com.topjohnwu.magisk.arch.BaseViewModel
 import com.topjohnwu.magisk.core.Config
 import com.topjohnwu.magisk.core.magiskdb.PolicyDao
-import com.topjohnwu.magisk.core.model.su.SuPolicy
 import com.topjohnwu.magisk.core.model.su.SuPolicy.Companion.ALLOW
 import com.topjohnwu.magisk.core.model.su.SuPolicy.Companion.DENY
 import com.topjohnwu.magisk.core.su.SuRequestHandler
@@ -31,6 +30,7 @@ import com.topjohnwu.magisk.di.AppContext
 import com.topjohnwu.magisk.events.DieEvent
 import com.topjohnwu.magisk.events.ShowUIEvent
 import com.topjohnwu.magisk.events.dialog.BiometricEvent
+import com.topjohnwu.magisk.ktx.getLabel
 import com.topjohnwu.magisk.utils.TextHolder
 import com.topjohnwu.magisk.utils.Utils
 import kotlinx.coroutines.launch
@@ -74,6 +74,7 @@ class SuRequestViewModel(
 
     private val handler = SuRequestHandler(AppContext.packageManager, policyDB)
     private lateinit var timer: CountDownTimer
+    private var initialized = false
 
     fun grantPressed() {
         cancelTimer()
@@ -100,17 +101,31 @@ class SuRequestViewModel(
     fun handleRequest(intent: Intent) {
         viewModelScope.launch {
             if (handler.start(intent))
-                showDialog(handler.policy)
+                showDialog()
             else
                 DieEvent().publish()
         }
     }
 
-    private fun showDialog(policy: SuPolicy) {
-        icon = policy.icon
-        title = policy.appName
-        packageName = policy.packageName
-        selectedItemPosition = timeoutPrefs.getInt(policy.packageName, 0)
+    private fun showDialog() {
+        val pm = handler.pm
+        val info = handler.pkgInfo
+        val app = info.applicationInfo
+
+        if (app == null) {
+            // The request is not coming from an app process, and the UID is a
+            // shared UID. We have no way to know where this request comes from.
+            icon = pm.defaultActivityIcon
+            title = "[SharedUID] ${info.sharedUserId}"
+            packageName = info.sharedUserId
+        } else {
+            val prefix = if (info.sharedUserId == null) "" else "[SharedUID] "
+            icon = app.loadIcon(pm)
+            title = "$prefix${app.getLabel(pm)}"
+            packageName = info.packageName
+        }
+
+        selectedItemPosition = timeoutPrefs.getInt(packageName, 0)
 
         // Set timer
         val millis = SECONDS.toMillis(Config.suDefaultTimeout.toLong())
@@ -118,17 +133,25 @@ class SuRequestViewModel(
 
         // Actually show the UI
         ShowUIEvent(if (Config.suTapjack) EmptyAccessibilityDelegate else null).publish()
+        initialized = true
     }
 
     private fun respond(action: Int) {
+        if (!initialized) {
+            // ignore the response until showDialog done
+            return
+        }
+
         timer.cancel()
 
         val pos = selectedItemPosition
-        timeoutPrefs.edit().putInt(handler.policy.packageName, pos).apply()
-        handler.respond(action, Config.Value.TIMEOUT_LIST[pos])
+        timeoutPrefs.edit().putInt(packageName, pos).apply()
 
-        // Kill activity after response
-        DieEvent().publish()
+        viewModelScope.launch {
+            handler.respond(action, Config.Value.TIMEOUT_LIST[pos])
+            // Kill activity after response
+            DieEvent().publish()
+        }
     }
 
     private fun cancelTimer() {
