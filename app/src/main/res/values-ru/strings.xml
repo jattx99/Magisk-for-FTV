@@ -3,7 +3,7 @@
     <!--Sections-->
     <string name="modules">Модули</string>
     <string name="superuser">Суперпользователь</string>
-    <string name="logs">Лог</string>
+    <string name="logs">Журнал</string>
     <string name="settings">Настройки</string>
     <string name="install">Установка</string>
     <string name="section_home">Главная</string>
@@ -81,11 +81,11 @@
     <string name="superuser_policy_none">Приложения ещё не запрашивали права суперпользователя</string>
 
     <!--Logs-->
-    <string name="log_data_none">Лог отсутствует</string>
-    <string name="log_data_magisk_none">Лог отсутствует</string>
-    <string name="menuSaveLog">Сохранить лог</string>
-    <string name="menuClearLog">Очистить лог</string>
-    <string name="logs_cleared">Лог успешно очищен</string>
+    <string name="log_data_none">Журнал отсутствует</string>
+    <string name="log_data_magisk_none">Журнал отсутствует</string>
+    <string name="menuSaveLog">Сохранить журнал</string>
+    <string name="menuClearLog">Очистить журнал</string>
+    <string name="logs_cleared">Журнал успешно очищен</string>
     <string name="pid">PID: %1$d</string>
     <string name="target_uid">Целевой UID: %1$d</string>
 

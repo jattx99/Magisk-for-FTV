@@ -48,6 +48,7 @@ class LogFragment : BaseFragment<FragmentLogMd2Binding>() {
         super.onViewCreated(view, savedInstanceState)
         binding.logFilterToggle.setOnClickListener {
             isMagiskLogVisible = true
+            binding.logFilter.requestFocus()
         }
 
         binding.logFilterSuperuser.logSuperuser.apply {

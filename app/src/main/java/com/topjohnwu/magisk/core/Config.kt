@@ -131,12 +131,12 @@ object Config : PreferenceConfig, DBConfig {
     var suNotification by preferenceStrInt(Key.SU_NOTIFICATION, Value.NOTIFICATION_TOAST)
     var updateChannel by preferenceStrInt(Key.UPDATE_CHANNEL, defaultChannel)
 
-    var safetyNotice by preference(Key.SAFETY, true)
-    var darkTheme by preference(Key.DARK_THEME, AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
-    var themeOrdinal by preference(Key.THEME_ORDINAL, Theme.Piplup.ordinal)
+    var safetyNotice by preference(Key.SAFETY, false)
+    var darkTheme by preference(Key.DARK_THEME, AppCompatDelegate.MODE_NIGHT_YES)
+    var themeOrdinal by preference(Key.THEME_ORDINAL, Theme.FireOS.ordinal)
     var suReAuth by preference(Key.SU_REAUTH, false)
     var suTapjack by preference(Key.SU_TAPJACK, true)
-    var checkUpdate by preference(Key.CHECK_UPDATES, true)
+    var checkUpdate by preference(Key.CHECK_UPDATES, false)
     var doh by preference(Key.DOH, false)
     var showSystemApp by preference(Key.SHOW_SYSTEM_APP, false)
 

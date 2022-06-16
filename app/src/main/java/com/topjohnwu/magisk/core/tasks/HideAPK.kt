@@ -107,7 +107,13 @@ object HideAPK {
     private suspend fun patchAndHide(activity: Activity, label: String, onFailure: Runnable): Boolean {
         val stub = File(activity.cacheDir, "stub.apk")
         try {
-            svc.fetchFile(Info.remote.stub.link).byteStream().writeTo(stub)
+            if (Info.isAmazonTV) {
+                stub.createNewFile()
+                if (!Shell.cmd("\$MAGISKBIN/magiskinit -x manager ${stub.path}").exec().isSuccess)
+                    return false
+            } else {
+                svc.fetchFile(Info.remote.stub.link).byteStream().writeTo(stub)
+            }
         } catch (e: IOException) {
             Timber.e(e)
             stub.createNewFile()

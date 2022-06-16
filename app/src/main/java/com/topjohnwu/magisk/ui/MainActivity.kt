@@ -2,6 +2,7 @@ package com.topjohnwu.magisk.ui
 
 import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.content.res.ColorStateList
 import android.os.Bundle
 import android.view.MenuItem
 import android.view.View
@@ -11,6 +12,8 @@ import androidx.core.view.forEach
 import androidx.core.view.isGone
 import androidx.core.view.isVisible
 import androidx.navigation.NavDirections
+import com.google.android.material.color.MaterialColors
+import com.google.android.material.shape.MaterialShapeDrawable
 import com.topjohnwu.magisk.MainDirections
 import com.topjohnwu.magisk.R
 import com.topjohnwu.magisk.arch.BaseViewModel
@@ -21,6 +24,7 @@ import com.topjohnwu.magisk.core.Info
 import com.topjohnwu.magisk.core.isRunningAsStub
 import com.topjohnwu.magisk.core.model.module.LocalModule
 import com.topjohnwu.magisk.databinding.ActivityMainMd2Binding
+import com.topjohnwu.magisk.databinding.setMargins
 import com.topjohnwu.magisk.ktx.startAnimations
 import com.topjohnwu.magisk.ui.home.HomeFragmentDirections
 import com.topjohnwu.magisk.utils.Utils
@@ -79,6 +83,28 @@ class MainActivity : SplashActivity<ActivityMainMd2Binding>() {
         }
 
         setSupportActionBar(binding.mainToolbar)
+
+        // tiny floating nav
+        val context = this@MainActivity
+        val margin = context.resources.getDimensionPixelSize(R.dimen.margin_generic) / 2
+        val mColor = MaterialColors.getColor(
+            context,
+            R.attr.colorSurfaceSurfaceVariant,
+            javaClass.canonicalName
+        )
+        val strokeColor = MaterialColors.getColor(
+            context,
+            R.attr.colorSurfaceVariant,
+            javaClass.canonicalName
+        )
+        val backgroundDrawable = MaterialShapeDrawable
+            .createWithElevationOverlay(context).apply {
+                fillColor = ColorStateList.valueOf(mColor)
+                setCornerSize(context.resources.getDimension(R.dimen.l_50))
+                setStroke(2f, strokeColor)
+            }
+        binding.mainNavigation.background = backgroundDrawable
+        binding.mainNavigation.setMargins(0, margin, 0, margin, 0, 0)
 
         binding.mainNavigation.setOnItemSelectedListener {
             getScreen(it.itemId)?.navigate()

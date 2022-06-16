@@ -9,7 +9,7 @@
     ## Inheritance
 
     You might want to inherit default values from "base" theme. You can do so implicitly by just
-    writing `<style name="ThemeFoundationMD2.MySuperAwesomeTheme" parent="ThemeFoundationMD2.Piplup">`.
+    writing `<style name="ThemeFoundationMD2.MySuperAwesomeTheme" parent="ThemeFoundationMD2.FireOS">`.
     With this approach you can only change values you (don't) like - such as `colorPrimary` or
     `colorSecondary`.
 
@@ -42,11 +42,11 @@
 
     <!--1st party themes-->
 
-    <style name="ThemeFoundationMD2.Piplup">
-        <item name="colorPrimary">#4EAFF5</item>
-        <item name="colorPrimaryVariant">#804EAFF5</item>
-        <item name="colorSecondary">#3E78AF</item>
-        <item name="colorSecondaryVariant">#803E78AF</item>
+    <style name="ThemeFoundationMD2.FireOS">
+        <item name="colorPrimary">#FFA724</item>
+        <item name="colorPrimaryVariant">#80FFA724</item>
+        <item name="colorSecondary">#FF9900</item>
+        <item name="colorSecondaryVariant">#80FF9900</item>
         <item name="colorSurface">#F9F9F9</item>
         <item name="colorSurfaceVariant">#EEEEEE</item>
         <item name="colorSurfaceSurfaceVariant">?colorSurface</item>
@@ -62,22 +62,23 @@
         <item name="colorDisabledVariant">#66808080</item>
     </style>
 
-    <style name="ThemeFoundationMD2.Amoled" parent="ThemeFoundationMD2.Piplup">
+    <style name="ThemeFoundationMD2.Amoled" parent="ThemeFoundationMD2.FireOS">
         <item name="colorSurface">#FFF</item>
+        <item name="colorSurfaceVariant">#F8F8F8</item>
         <item name="colorOnPrimary">#FFF</item>
         <item name="colorOnSecondary">#FFF</item>
         <item name="colorOnBackground">#FFF</item>
         <item name="colorOnError">#FFF</item>
     </style>
 
-    <style name="ThemeFoundationMD2.Rayquaza" parent="ThemeFoundationMD2.Piplup">
+    <style name="ThemeFoundationMD2.Rayquaza" parent="ThemeFoundationMD2.FireOS">
         <item name="colorPrimary">#68A17F</item>
         <item name="colorPrimaryVariant">#8068A17F</item>
         <item name="colorSecondary">#2F6D43</item>
         <item name="colorSecondaryVariant">#802F6D43</item>
     </style>
 
-    <style name="ThemeFoundationMD2.Zapdos.Base" parent="ThemeFoundationMD2.Piplup">
+    <style name="ThemeFoundationMD2.Zapdos.Base" parent="ThemeFoundationMD2.FireOS">
         <item name="colorSecondary">#B29667</item>
         <item name="colorSecondaryVariant">#80B29667</item>
         <item name="colorOnPrimary">#000000</item>
@@ -89,7 +90,7 @@
         <item name="colorPrimaryVariant">#80F2B90D</item>
     </style>
 
-    <style name="ThemeFoundationMD2.Charmeleon" parent="ThemeFoundationMD2.Piplup">
+    <style name="ThemeFoundationMD2.Charmeleon" parent="ThemeFoundationMD2.FireOS">
         <item name="colorPrimary">#DB7366</item>
         <item name="colorPrimaryVariant">#80DB7366</item>
         <item name="colorSecondary">#B65247</item>
@@ -98,7 +99,7 @@
         <item name="colorOnPrimaryVariant">#D9222222</item>
     </style>
 
-    <style name="ThemeFoundationMD2.Mew.Base" parent="ThemeFoundationMD2.Piplup">
+    <style name="ThemeFoundationMD2.Mew.Base" parent="ThemeFoundationMD2.FireOS">
         <item name="colorSecondary">#B5889B</item>
         <item name="colorSecondaryVariant">#80B5889B</item>
     </style>
@@ -110,7 +111,7 @@
         <item name="colorOnPrimaryVariant">#D9E6E6E6</item>
     </style>
 
-    <style name="ThemeFoundationMD2.Salamence" parent="ThemeFoundationMD2.Piplup">
+    <style name="ThemeFoundationMD2.Salamence" parent="ThemeFoundationMD2.FireOS">
         <item name="colorPrimary">#70B2C6</item>
         <item name="colorPrimaryVariant">#8070B2C6</item>
         <item name="colorSecondary">#C06A75</item>
@@ -121,9 +122,9 @@
 
     <style name="ThemeFoundationMD2.Fraxure" parent="ThemeFoundationMD2.Amoled">
         <item name="colorPrimary">#009688</item>
-        <item name="colorPrimaryVariant">#8000796B</item>
-        <item name="colorSecondary">?colorError</item>
-        <item name="colorSecondaryVariant">#806D1111</item>
+        <item name="colorPrimaryVariant">#80009688</item>
+        <item name="colorSecondary">#00796B</item>
+        <item name="colorSecondaryVariant">#8000796B</item>
     </style>
 
     <!--3rd party themes-->

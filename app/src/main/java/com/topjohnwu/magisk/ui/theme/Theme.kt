@@ -8,11 +8,11 @@ enum class Theme(
     val themeRes: Int
 ) {
 
-    Piplup(
-        themeName = "Piplup",
-        themeRes = R.style.ThemeFoundationMD2_Piplup
+    FireOS(
+        themeName = "FireOS",
+        themeRes = R.style.ThemeFoundationMD2_FireOS
     ),
-    PiplupAmoled(
+    FireOSAmoled(
         themeName = "AMOLED",
         themeRes = R.style.ThemeFoundationMD2_Amoled
     ),
@@ -37,7 +37,7 @@ enum class Theme(
         themeRes = R.style.ThemeFoundationMD2_Salamence
     ),
     Fraxure(
-        themeName = "Fraxure (Legacy)",
+        themeName = "Fraxure",
         themeRes = R.style.ThemeFoundationMD2_Fraxure
     );
 
@@ -48,7 +48,7 @@ enum class Theme(
     }
 
     companion object {
-        val selected get() = values().getOrNull(Config.themeOrdinal) ?: Piplup
+        val selected get() = values().getOrNull(Config.themeOrdinal) ?: FireOS
     }
 
 }

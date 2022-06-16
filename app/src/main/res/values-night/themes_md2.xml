@@ -3,11 +3,11 @@
 
     <!--1st party themes-->
 
-    <style name="ThemeFoundationMD2.Piplup">
-        <item name="colorPrimary">#4EAFF5</item>
-        <item name="colorPrimaryVariant">#804EAFF5</item>
-        <item name="colorSecondary">#3E78AF</item>
-        <item name="colorSecondaryVariant">#803E78AF</item>
+    <style name="ThemeFoundationMD2.FireOS">
+        <item name="colorPrimary">#FFA724</item>
+        <item name="colorPrimaryVariant">#80FFA724</item>
+        <item name="colorSecondary">#FF9900</item>
+        <item name="colorSecondaryVariant">#80FF9900</item>
         <item name="colorSurface">#0D0D0D</item>
         <item name="colorSurfaceVariant">#171717</item>
         <item name="colorSurfaceSurfaceVariant">#292929</item>
@@ -23,8 +23,9 @@
         <item name="colorDisabledVariant">#66808080</item>
     </style>
 
-    <style name="ThemeFoundationMD2.Amoled" parent="ThemeFoundationMD2.Piplup">
+    <style name="ThemeFoundationMD2.Amoled" parent="ThemeFoundationMD2.FireOS">
         <item name="colorSurface">#000</item>
+        <item name="colorSurfaceVariant">#0A0A0A</item>
         <item name="colorOnPrimary">#FFF</item>
         <item name="colorOnSecondary">#FFF</item>
         <item name="colorOnBackground">#000</item>
