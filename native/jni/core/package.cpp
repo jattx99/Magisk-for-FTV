@@ -8,7 +8,7 @@
 
 using namespace std;
 
-#define ENFORCE_SIGNATURE (false) // !MAGISK_DEBUG
+#define ENFORCE_SIGNATURE (!MAGISK_DEBUG) // false
 
 // These functions will be called on every single zygote process specialization and su request,
 // so performance is absolutely critical. Most operations should either have its result cached
