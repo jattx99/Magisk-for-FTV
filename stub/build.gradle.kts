@@ -15,7 +15,7 @@ android {
 
     val url = if (canary) null
     //else "https://cdn.jsdelivr.net/gh/topjohnwu/magisk-files@${Config.version}/app-release.apk"
-    else "https://github.com/tsynik/Magisk/releases/download/v25.0.FTV/app-release.apk" // "https://tsynik.github.io/magisk/app-release.apk"
+    else "https://github.com/tsynik/Magisk/releases/download/${Config.version}/app-release.apk" // "https://tsynik.github.io/magisk/app-release.apk"
 
     defaultConfig {
         applicationId = "com.topjohnwu.magisk"
