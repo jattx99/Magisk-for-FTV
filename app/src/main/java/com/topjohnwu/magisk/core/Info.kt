@@ -39,7 +39,7 @@ object Info {
 
     @JvmField var hasGMS = true
     val isSamsung = Build.MANUFACTURER.equals("samsung", ignoreCase = true)
-    val isAmazonTV = Build.MANUFACTURER.equals("amazon", ignoreCase = true) && AppContext.packageManager.hasSystemFeature("amazon.hardware.fire_tv")
+    val isAmazon = Build.MANUFACTURER.equals("amazon", ignoreCase = true)
     @JvmField val isEmulator =
         getProperty("ro.kernel.qemu", "0") == "1" ||
             getProperty("ro.boot.qemu", "0") == "1"

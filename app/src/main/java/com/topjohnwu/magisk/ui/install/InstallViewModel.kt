@@ -41,7 +41,7 @@ class InstallViewModel(
     val hideVbmeta = Info.vbmeta || Info.isSamsung || Info.isAB
     val skipOptions = Info.isEmulator || (Info.isSAR && !Info.isFDE && hideVbmeta && Info.ramdisk)
     val noSecondSlot = !isRooted || !Info.isAB || Info.isEmulator
-    val isAmazonTV = Info.isAmazonTV
+    val isAmazon = Info.isAmazon
 
     @get:Bindable
     var step = if (skipOptions) 1 else 0
