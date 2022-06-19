@@ -5,6 +5,7 @@ import android.app.Application
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Bundle
+import com.topjohnwu.magisk.BuildConfig
 import com.topjohnwu.magisk.StubApk
 import com.topjohnwu.magisk.core.di.ServiceLocator
 import com.topjohnwu.magisk.core.utils.*
@@ -54,6 +55,7 @@ open class App() : Application() {
         ServiceLocator.context = base
         app.registerActivityLifecycleCallbacks(ActivityTracker)
 
+        Shell.enableVerboseLogging = BuildConfig.DEBUG
         Shell.setDefaultBuilder(Shell.Builder.create()
             .setFlags(Shell.FLAG_MOUNT_MASTER)
             .setInitializers(ShellInit::class.java)
