@@ -18,8 +18,8 @@ Some highlight features:
 
 [Github](https://github.com/topjohnwu/Magisk/) is the only source where you can get official Magisk information and downloads.
 
-[![](https://img.shields.io/badge/Magisk-v25.1-blue)](https://github.com/topjohnwu/Magisk/releases/tag/v25.1)
-[![](https://img.shields.io/badge/Magisk%20Beta-v25.1-blue)](https://github.com/topjohnwu/Magisk/releases/tag/v25.1)
+[![](https://img.shields.io/badge/Magisk-v25.2-blue)](https://github.com/topjohnwu/Magisk/releases/tag/v25.2)
+[![](https://img.shields.io/badge/Magisk%20Beta-v25.2-blue)](https://github.com/topjohnwu/Magisk/releases/tag/v25.2)
 [![](https://img.shields.io/badge/Magisk-Canary-red)](https://raw.githubusercontent.com/topjohnwu/magisk-files/canary/app-release.apk)
 [![](https://img.shields.io/badge/Magisk-Debug-red)](https://raw.githubusercontent.com/topjohnwu/magisk-files/canary/app-debug.apk)
 
@@ -51,7 +51,7 @@ For Magisk app crashes, record and upload the logcat when the crash occurs.
 - Run `./build.py ndk` to let the script download and install NDK for you
 - To start building, run `build.py` to see your options. \
   For each action, use `-h` to access help (e.g. `./build.py all -h`)
-- To start development, open the project with Android Studio. The IDE can be used for both app (Kotlin/Java) and native (C++/C) sources.
+- To start development, open the project with Android Studio. The IDE can be used for both app (Kotlin/Java) and native sources.
 - Optionally, set custom configs with `config.prop`. A sample `config.prop.sample` is provided.
 
 ## Signing and Distribution
