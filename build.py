@@ -232,6 +232,9 @@ def run_cargo_build(args):
 
     # Install cxxbridge and generate C++ bindings
     native_out = op.join('..', 'out')
+    cfg = op.join('.cargo', 'config.toml')
+    cfg_bak = op.join('.cargo', 'config.toml.bak')
+    mv(cfg, cfg_bak)
     cxx_src = op.join('external', 'cxx-rs', 'gen', 'cmd')
     local_cargo_root = op.join(native_out, '.cargo')
     mkdir_p(local_cargo_root)
@@ -239,6 +242,7 @@ def run_cargo_build(args):
     if not args.verbose:
         cmds.append('-q')
     proc = execv(cmds, env)
+    mv(cfg_bak, cfg)
     if proc.returncode != 0:
         error('cxxbridge-cmd installation failed!')
     cxxbridge = op.join(local_cargo_root, 'bin', 'cxxbridge' + EXE_EXT)
@@ -460,14 +464,17 @@ def setup_ndk(args):
 
 def setup_avd(args):
     if not args.skip:
-        args.release = False
         build_all(args)
 
     header('* Setting up emulator')
 
     abi = cmd_out([adb_path, 'shell', 'getprop', 'ro.product.cpu.abi'])
-    proc = execv([adb_path, 'push', f'native/out/{abi}/busybox', 'out/app-debug.apk',
-           'scripts/avd_magisk.sh', '/data/local/tmp'])
+    proc = execv([adb_path, 'push', f'native/out/{abi}/busybox', 'scripts/avd_magisk.sh', '/data/local/tmp'])
+    if proc.returncode != 0:
+        error('adb push failed!')
+
+    apk = 'out/app-release.apk' if args.release else 'out/app-debug.apk'
+    proc = execv([adb_path, 'push', apk, '/data/local/tmp/magisk.apk'])
     if proc.returncode != 0:
         error('adb push failed!')
 
@@ -501,10 +508,15 @@ def patch_avd_ramdisk(args):
             f.write(adv_ft)
 
     abi = cmd_out([adb_path, 'shell', 'getprop', 'ro.product.cpu.abi'])
-    proc = execv([adb_path, 'push', f'native/out/{abi}/busybox', 'out/app-debug.apk',
-           'scripts/avd_patch.sh', '/data/local/tmp'])
+    proc = execv([adb_path, 'push', f'native/out/{abi}/busybox', 'scripts/avd_patch.sh', '/data/local/tmp'])
     if proc.returncode != 0:
         error('adb push failed!')
+
+    apk = 'out/app-release.apk' if args.release else 'out/app-debug.apk'
+    proc = execv([adb_path, 'push', apk, '/data/local/tmp/magisk.apk'])
+    if proc.returncode != 0:
+        error('adb push failed!')
+
     proc = execv([adb_path, 'push', backup, '/data/local/tmp/ramdisk.cpio.tmp'])
     if proc.returncode != 0:
         error('adb push failed!')

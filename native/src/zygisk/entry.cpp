@@ -65,7 +65,6 @@ static void second_stage_entry() {
 }
 
 static void first_stage_entry() {
-    android_logging();
     ZLOGD("inject 1st stage\n");
 
     char path[PATH_MAX];
@@ -105,14 +104,24 @@ static void first_stage_entry() {
         info.reserved_size = -1;
     }
 
+    // Load second stage
+    android_dlextinfo info {
+        .flags = ANDROID_DLEXT_FORCE_LOAD
+    };
     setenv(INJECT_ENV_2, "1", 1);
-    // Force dlopen ourselves to make ourselves dlclose-able.
-    // After this call, all global variables will be reset.
-    android_dlopen_ext(path, RTLD_LAZY, &info);
+    if (android_dlopen_ext(path, RTLD_LAZY, &info) == nullptr) {
+        // Android 5.x doesn't support ANDROID_DLEXT_FORCE_LOAD
+        ZLOGI("ANDROID_DLEXT_FORCE_LOAD is not supported, fallback to dlopen\n");
+        if (dlopen(path, RTLD_LAZY) == nullptr) {
+            ZLOGE("Cannot load the second stage\n");
+            unsetenv(INJECT_ENV_2);
+        }
+    }
 }
 
 [[gnu::constructor]] [[maybe_unused]]
 static void zygisk_init() {
+    android_logging();
     if (getenv(INJECT_ENV_1)) {
         unsetenv(INJECT_ENV_1);
         first_stage_entry();
@@ -326,7 +335,11 @@ static void get_process_info(int client, const sock_cred *cred) {
 
     if (should_load_modules(flags)) {
         char buf[256];
-        get_exe(cred->pid, buf, sizeof(buf));
+        if (!get_exe(cred->pid, buf, sizeof(buf))) {
+            LOGW("zygisk: remote process %d probably died, abort\n", cred->pid);
+            send_fd(client, -1);
+            return;
+        }
         vector<int> fds = get_module_fds(str_ends(buf, "64"));
         send_fds(client, fds.data(), fds.size());
     }
@@ -392,8 +405,11 @@ void zygisk_handler(int client, const sock_cred *cred) {
         send_log_pipe(client);
         break;
     case ZygiskRequest::CONNECT_COMPANION:
-        get_exe(cred->pid, buf, sizeof(buf));
-        connect_companion(client, str_ends(buf, "64"));
+        if (get_exe(cred->pid, buf, sizeof(buf))) {
+            connect_companion(client, str_ends(buf, "64"));
+        } else {
+            LOGW("zygisk: remote process %d probably died, abort\n", cred->pid);
+        }
         break;
     case ZygiskRequest::GET_MODDIR:
         get_moddir(client);
