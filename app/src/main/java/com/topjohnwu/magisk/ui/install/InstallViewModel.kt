@@ -18,10 +18,10 @@ import com.topjohnwu.magisk.core.Config
 import com.topjohnwu.magisk.core.Const
 import com.topjohnwu.magisk.core.Info
 import com.topjohnwu.magisk.core.base.ContentResultCallback
-import com.topjohnwu.magisk.data.repository.NetworkService
+import com.topjohnwu.magisk.core.di.AppContext
+import com.topjohnwu.magisk.core.di.ServiceLocator
+import com.topjohnwu.magisk.core.repository.NetworkService
 import com.topjohnwu.magisk.databinding.set
-import com.topjohnwu.magisk.di.AppContext
-import com.topjohnwu.magisk.di.ServiceLocator
 import com.topjohnwu.magisk.events.GetContentEvent
 import com.topjohnwu.magisk.events.dialog.SecondSlotWarningDialog
 import com.topjohnwu.magisk.ui.flash.FlashFragment
@@ -95,7 +95,6 @@ class InstallViewModel(
             R.id.method_inactive_slot -> FlashFragment.flash(true).navigate(true)
             else -> error("Unknown value")
         }
-        state = State.LOADING
     }
 
     override fun onSaveState(state: Bundle) {

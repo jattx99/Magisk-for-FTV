@@ -20,13 +20,13 @@ import com.topjohnwu.magisk.BR
 import com.topjohnwu.magisk.R
 import com.topjohnwu.magisk.arch.BaseViewModel
 import com.topjohnwu.magisk.core.Config
-import com.topjohnwu.magisk.core.magiskdb.PolicyDao
+import com.topjohnwu.magisk.core.data.magiskdb.PolicyDao
+import com.topjohnwu.magisk.core.di.AppContext
 import com.topjohnwu.magisk.core.model.su.SuPolicy.Companion.ALLOW
 import com.topjohnwu.magisk.core.model.su.SuPolicy.Companion.DENY
 import com.topjohnwu.magisk.core.su.SuRequestHandler
 import com.topjohnwu.magisk.core.utils.BiometricHelper
 import com.topjohnwu.magisk.databinding.set
-import com.topjohnwu.magisk.di.AppContext
 import com.topjohnwu.magisk.events.DieEvent
 import com.topjohnwu.magisk.events.ShowUIEvent
 import com.topjohnwu.magisk.events.dialog.BiometricEvent
@@ -34,7 +34,6 @@ import com.topjohnwu.magisk.ktx.getLabel
 import com.topjohnwu.magisk.utils.TextHolder
 import com.topjohnwu.magisk.utils.Utils
 import kotlinx.coroutines.launch
-import me.tatarka.bindingcollectionadapter2.ItemBinding
 import java.util.concurrent.TimeUnit.SECONDS
 
 class SuRequestViewModel(
@@ -69,8 +68,6 @@ class SuRequestViewModel(
         }
         false
     }
-
-    val itemBinding = ItemBinding.of<String>(BR.item, R.layout.item_spinner)
 
     private val handler = SuRequestHandler(AppContext.packageManager, policyDB)
     private lateinit var timer: CountDownTimer
@@ -192,15 +189,15 @@ class SuRequestViewModel(
 
     // Invisible for accessibility services
     object EmptyAccessibilityDelegate : View.AccessibilityDelegate() {
-        override fun sendAccessibilityEvent(host: View?, eventType: Int) {}
-        override fun performAccessibilityAction(host: View?, action: Int, args: Bundle?) = true
-        override fun sendAccessibilityEventUnchecked(host: View?, event: AccessibilityEvent?) {}
-        override fun dispatchPopulateAccessibilityEvent(host: View?, event: AccessibilityEvent?) = true
-        override fun onPopulateAccessibilityEvent(host: View?, event: AccessibilityEvent?) {}
-        override fun onInitializeAccessibilityEvent(host: View?, event: AccessibilityEvent?) {}
+        override fun sendAccessibilityEvent(host: View, eventType: Int) {}
+        override fun performAccessibilityAction(host: View, action: Int, args: Bundle?) = true
+        override fun sendAccessibilityEventUnchecked(host: View, event: AccessibilityEvent) {}
+        override fun dispatchPopulateAccessibilityEvent(host: View, event: AccessibilityEvent) = true
+        override fun onPopulateAccessibilityEvent(host: View, event: AccessibilityEvent) {}
+        override fun onInitializeAccessibilityEvent(host: View, event: AccessibilityEvent) {}
         override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {}
         override fun addExtraDataToAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo, extraDataKey: String, arguments: Bundle?) {}
-        override fun onRequestSendAccessibilityEvent(host: ViewGroup?, child: View?, event: AccessibilityEvent?): Boolean = false
-        override fun getAccessibilityNodeProvider(host: View?): AccessibilityNodeProvider? = null
+        override fun onRequestSendAccessibilityEvent(host: ViewGroup, child: View, event: AccessibilityEvent): Boolean = false
+        override fun getAccessibilityNodeProvider(host: View): AccessibilityNodeProvider? = null
     }
 }

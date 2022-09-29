@@ -183,7 +183,15 @@ rm -f ramdisk.cpio.orig config magisk*.xz
 #################
 
 for dt in dtb kernel_dtb extra; do
-  [ -f $dt ] && ./magiskboot dtb $dt patch && ui_print "- Patch fstab in $dt"
+  if [ -f $dt ]; then
+    if ! ./magiskboot dtb $dt test; then
+      ui_print "! Boot image $dt was patched by old (unsupported) Magisk"
+      abort "! Please try again with *unpatched* boot image"
+    fi
+    if ./magiskboot dtb $dt patch; then
+      ui_print "- Patch fstab in boot image $dt"
+    fi
+  fi
 done
 
 if [ -f kernel ]; then
