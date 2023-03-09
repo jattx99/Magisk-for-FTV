@@ -1,46 +1,22 @@
 #include <sys/sendfile.h>
+#include <sys/sysmacros.h>
 #include <linux/fs.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <libgen.h>
 
 #include <base.hpp>
+#include <misc.hpp>
 #include <selinux.hpp>
 
 using namespace std;
 
-ssize_t fd_path(int fd, char *path, size_t size) {
-    snprintf(path, size, "/proc/self/fd/%d", fd);
-    return xreadlink(path, path, size);
-}
-
 int fd_pathat(int dirfd, const char *name, char *path, size_t size) {
-    if (fd_path(dirfd, path, size) < 0)
+    if (fd_path(dirfd, byte_slice(path, size)) < 0)
         return -1;
     auto len = strlen(path);
     path[len] = '/';
-    strlcpy(path + len + 1, name, size - len - 1);
-    return 0;
-}
-
-int mkdirs(const char *path, mode_t mode) {
-    char buf[4096];
-    strlcpy(buf, path, sizeof(buf));
-    errno = 0;
-    for (char *p = &buf[1]; *p; ++p) {
-        if (*p == '/') {
-            *p = '\0';
-            if (mkdir(buf, mode) == -1) {
-                if (errno != EEXIST)
-                    return -1;
-            }
-            *p = '/';
-        }
-    }
-    if (mkdir(buf, mode) == -1) {
-        if (errno != EEXIST)
-            return -1;
-    }
+    strscpy(path + len + 1, name, size - len - 1);
     return 0;
 }
 
@@ -124,7 +100,7 @@ void mv_dir(int src, int dest) {
     for (dirent *entry; (entry = xreaddir(dir.get()));) {
         switch (entry->d_type) {
         case DT_DIR:
-            if (xfaccessat(dest, entry->d_name) == 0) {
+            if (xfaccessat(dest, entry->d_name, F_OK, 0) == 0) {
                 // Destination folder exists, needs recursive move
                 int newsrc = xopenat(src, entry->d_name, O_RDONLY | O_CLOEXEC);
                 int newdest = xopenat(dest, entry->d_name, O_RDONLY | O_CLOEXEC);
@@ -369,86 +345,84 @@ void parse_prop_file(const char *file, const function<bool(string_view, string_v
         parse_prop_file(fp.get(), fn);
 }
 
-// Original source: https://android.googlesource.com/platform/bionic/+/master/libc/bionic/mntent.cpp
-// License: AOSP, full copyright notice please check original source
-static struct mntent *compat_getmntent_r(FILE *fp, struct mntent *e, char *buf, int buf_len) {
-    memset(e, 0, sizeof(*e));
-    while (fgets(buf, buf_len, fp) != nullptr) {
-        // Entries look like "proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0".
-        // That is: mnt_fsname mnt_dir mnt_type mnt_opts 0 0.
-        int fsname0, fsname1, dir0, dir1, type0, type1, opts0, opts1;
-        if (sscanf(buf, " %n%*s%n %n%*s%n %n%*s%n %n%*s%n %d %d",
-                   &fsname0, &fsname1, &dir0, &dir1, &type0, &type1, &opts0, &opts1,
-                   &e->mnt_freq, &e->mnt_passno) == 2) {
-            e->mnt_fsname = &buf[fsname0];
-            buf[fsname1] = '\0';
-            e->mnt_dir = &buf[dir0];
-            buf[dir1] = '\0';
-            e->mnt_type = &buf[type0];
-            buf[type1] = '\0';
-            e->mnt_opts = &buf[opts0];
-            buf[opts1] = '\0';
-            return e;
-        }
-    }
-    return nullptr;
-}
+std::vector<mount_info> parse_mount_info(const char *pid) {
+    char buf[PATH_MAX] = {};
+    ssprintf(buf, sizeof(buf), "/proc/%s/mountinfo", pid);
+    std::vector<mount_info> result;
 
-void parse_mnt(const char *file, const function<bool(mntent*)> &fn) {
-    auto fp = sFILE(setmntent(file, "re"), endmntent);
-    if (fp) {
-        mntent mentry{};
-        char buf[4096];
-        // getmntent_r from system's libc.so is broken on old platform
-        // use the compat one instead
-        while (compat_getmntent_r(fp.get(), &mentry, buf, sizeof(buf))) {
-            if (!fn(&mentry))
-                break;
-        }
-    }
-}
+    file_readline(buf, [&result](string_view line) -> bool {
+        int root_start = 0, root_end = 0;
+        int target_start = 0, target_end = 0;
+        int vfs_option_start = 0, vfs_option_end = 0;
+        int type_start = 0, type_end = 0;
+        int source_start = 0, source_end = 0;
+        int fs_option_start = 0, fs_option_end = 0;
+        int optional_start = 0, optional_end = 0;
+        unsigned int id, parent, maj, min;
+        sscanf(line.data(),
+               "%u "           // (1) id
+               "%u "           // (2) parent
+               "%u:%u "        // (3) maj:min
+               "%n%*s%n "      // (4) mountroot
+               "%n%*s%n "      // (5) target
+               "%n%*s%n"       // (6) vfs options (fs-independent)
+               "%n%*[^-]%n - " // (7) optional fields
+               "%n%*s%n "      // (8) FS type
+               "%n%*s%n "      // (9) source
+               "%n%*s%n",      // (10) fs options (fs specific)
+               &id, &parent, &maj, &min, &root_start, &root_end, &target_start,
+               &target_end, &vfs_option_start, &vfs_option_end,
+               &optional_start, &optional_end, &type_start, &type_end,
+               &source_start, &source_end, &fs_option_start, &fs_option_end);
 
-void backup_folder(const char *dir, vector<raw_file> &files) {
-    char path[PATH_MAX];
-    xrealpath(dir, path);
-    int len = strlen(path);
-    pre_order_walk(xopen(dir, O_RDONLY), [&](int dfd, dirent *entry) -> walk_result {
-        int fd = xopenat(dfd, entry->d_name, O_RDONLY);
-        if (fd < 0)
-            return SKIP;
-        run_finally f([&]{ close(fd); });
-        if (fd_path(fd, path, sizeof(path)) < 0)
-            return SKIP;
-        raw_file file;
-        file.path = path + len + 1;
-        if (fgetattr(fd, &file.attr) < 0)
-            return SKIP;
-        if (entry->d_type == DT_REG) {
-            file.content = full_read(fd);
-        } else if (entry->d_type == DT_LNK) {
-            xreadlinkat(dfd, entry->d_name, path, sizeof(path));
-            file.content = path;
+        auto root = line.substr(root_start, root_end - root_start);
+        auto target = line.substr(target_start, target_end - target_start);
+        auto vfs_option =
+                line.substr(vfs_option_start, vfs_option_end - vfs_option_start);
+        ++optional_start;
+        --optional_end;
+        auto optional = line.substr(
+                optional_start,
+                optional_end - optional_start > 0 ? optional_end - optional_start : 0);
+
+        auto type = line.substr(type_start, type_end - type_start);
+        auto source = line.substr(source_start, source_end - source_start);
+        auto fs_option =
+                line.substr(fs_option_start, fs_option_end - fs_option_start);
+
+        unsigned int shared = 0;
+        unsigned int master = 0;
+        unsigned int propagate_from = 0;
+        if (auto pos = optional.find("shared:"); pos != std::string_view::npos) {
+            shared = parse_int(optional.substr(pos + 7));
         }
-        files.emplace_back(std::move(file));
-        return CONTINUE;
+        if (auto pos = optional.find("master:"); pos != std::string_view::npos) {
+            master = parse_int(optional.substr(pos + 7));
+        }
+        if (auto pos = optional.find("propagate_from:");
+                pos != std::string_view::npos) {
+            propagate_from = parse_int(optional.substr(pos + 15));
+        }
+
+        result.emplace_back(mount_info {
+                .id = id,
+                .parent = parent,
+                .device = static_cast<dev_t>(makedev(maj, min)),
+                .root {root},
+                .target {target},
+                .vfs_option {vfs_option},
+                .optional {
+                        .shared = shared,
+                        .master = master,
+                        .propagate_from = propagate_from,
+                },
+                .type {type},
+                .source {source},
+                .fs_option {fs_option},
+        });
+        return true;
     });
-}
-
-void restore_folder(const char *dir, vector<raw_file> &files) {
-    string base(dir);
-    // Pre-order means folders will always be first
-    for (raw_file &file : files) {
-        string path = base + "/" + file.path;
-        if (S_ISDIR(file.attr.st.st_mode)) {
-            mkdirs(path.data(), 0);
-        } else if (S_ISREG(file.attr.st.st_mode)) {
-            if (auto fp = xopen_file(path.data(), "we"))
-                fwrite(file.content.data(), 1, file.content.size(), fp.get());
-        } else if (S_ISLNK(file.attr.st.st_mode)) {
-            symlink(file.content.data(), path.data());
-        }
-        setattr(path.data(), &file.attr);
-    }
+    return result;
 }
 
 sDIR make_dir(DIR *dp) {
@@ -517,10 +491,10 @@ mmap_data::mmap_data(const char *name, bool rw) {
 
 string find_apk_path(const char *pkg) {
     char buf[PATH_MAX];
+    size_t len = strlen(pkg);
     pre_order_walk(xopen("/data/app", O_RDONLY), [&](int dfd, dirent *entry) -> walk_result {
         if (entry->d_type != DT_DIR)
             return SKIP;
-        size_t len = strlen(pkg);
         if (strncmp(entry->d_name, pkg, len) == 0 && entry->d_name[len] == '-') {
             fd_pathat(dfd, entry->d_name, buf, sizeof(buf));
             return ABORT;

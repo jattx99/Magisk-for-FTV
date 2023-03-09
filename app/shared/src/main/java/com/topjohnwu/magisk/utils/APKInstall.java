@@ -25,9 +25,6 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import io.michaelrocks.paranoid.Obfuscate;
-
-@Obfuscate
 public final class APKInstall {
 
     public static void transfer(InputStream in, OutputStream out) throws IOException {
@@ -36,6 +33,16 @@ public final class APKInstall {
         int read;
         while ((read = in.read(buffer, 0, size)) >= 0) {
             out.write(buffer, 0, read);
+        }
+    }
+
+    public static void registerReceiver(
+            Context context, BroadcastReceiver receiver, IntentFilter filter) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // noinspection InlinedApi
+            context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            context.registerReceiver(receiver, filter);
         }
     }
 
@@ -51,9 +58,9 @@ public final class APKInstall {
             // If pkg is not null, look for package added event
             var filter = new IntentFilter(Intent.ACTION_PACKAGE_ADDED);
             filter.addDataScheme("package");
-            context.registerReceiver(receiver, filter);
+            registerReceiver(context, receiver, filter);
         }
-        context.registerReceiver(receiver, new IntentFilter(receiver.sessionId));
+        registerReceiver(context, receiver, new IntentFilter(receiver.sessionId));
         return receiver;
     }
 

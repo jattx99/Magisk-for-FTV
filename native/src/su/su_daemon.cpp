@@ -64,7 +64,7 @@ void su_info::check_db() {
 
     if (eval_uid > 0) {
         char query[256], *err;
-        snprintf(query, sizeof(query),
+        ssprintf(query, sizeof(query),
             "SELECT policy, logging, notification FROM policies "
             "WHERE uid=%d AND (until=0 OR until>%li)", eval_uid, time(nullptr));
         err = db_exec(query, [&](db_row &row) -> bool {
@@ -125,7 +125,7 @@ bool uid_granted_root(int uid) {
     bool granted = false;
 
     char query[256], *err;
-    snprintf(query, sizeof(query),
+    ssprintf(query, sizeof(query),
         "SELECT policy FROM policies WHERE uid=%d AND (until=0 OR until>%li)",
         uid, time(nullptr));
     err = db_exec(query, [&](db_row &row) -> bool {
@@ -142,7 +142,7 @@ void prune_su_access() {
     vector<bool> app_no_list = get_app_no_list();
     vector<int> rm_uids;
     char query[256], *err;
-    strlcpy(query, "SELECT uid FROM policies", sizeof(query));
+    strscpy(query, "SELECT uid FROM policies", sizeof(query));
     err = db_exec(query, [&](db_row &row) -> bool {
         int uid = parse_int(row["uid"]);
         int app_id = to_app_id(uid);
@@ -158,7 +158,7 @@ void prune_su_access() {
     db_err_cmd(err, return);
 
     for (int uid : rm_uids) {
-        snprintf(query, sizeof(query), "DELETE FROM policies WHERE uid == %d", uid);
+        ssprintf(query, sizeof(query), "DELETE FROM policies WHERE uid == %d", uid);
         // Don't care about errors
         db_exec(query);
     }
@@ -167,8 +167,13 @@ void prune_su_access() {
 static shared_ptr<su_info> get_su_info(unsigned uid) {
     LOGD("su: request from uid=[%d]\n", uid);
 
-    shared_ptr<su_info> info;
+    if (uid == AID_ROOT) {
+        auto info = make_shared<su_info>(uid);
+        info->access = SILENT_SU_ACCESS;
+        return info;
+    }
 
+    shared_ptr<su_info> info;
     {
         mutex_guard lock(cache_lock);
         if (!cached || cached->uid != uid || !cached->is_fresh())
@@ -183,8 +188,8 @@ static shared_ptr<su_info> get_su_info(unsigned uid) {
         // Not cached, get data from database
         info->check_db();
 
-        // If it's root or the manager, allow it silently
-        if (info->uid == AID_ROOT || to_app_id(info->uid) == to_app_id(info->mgr_uid)) {
+        // If it's the manager, allow it silently
+        if (to_app_id(info->uid) == to_app_id(info->mgr_uid)) {
             info->access = SILENT_SU_ACCESS;
             return info;
         }
@@ -410,11 +415,11 @@ void su_daemon_handler(int client, const sock_cred *cred) {
     // Setup environment
     umask(022);
     char path[32];
-    snprintf(path, sizeof(path), "/proc/%d/cwd", ctx.pid);
-    char cwd[PATH_MAX];
-    if (realpath(path, cwd))
+    ssprintf(path, sizeof(path), "/proc/%d/cwd", ctx.pid);
+    char cwd[4096];
+    if (realpath(path, cwd, sizeof(cwd)) > 0)
         chdir(cwd);
-    snprintf(path, sizeof(path), "/proc/%d/environ", ctx.pid);
+    ssprintf(path, sizeof(path), "/proc/%d/environ", ctx.pid);
     auto env = full_read(path);
     clearenv();
     for (size_t pos = 0; pos < env.size(); ++pos) {

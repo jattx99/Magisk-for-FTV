@@ -41,6 +41,7 @@ fix_env() {
   rm -rf $MAGISKBIN/*
   mkdir -p $MAGISKBIN 2>/dev/null
   chmod 700 $NVBASE
+  rm $1/stub.apk
   cp_readlink $1 $MAGISKBIN
   rm -rf $1
   chown -R 0:0 $MAGISKBIN
@@ -133,11 +134,12 @@ adb_pm_install() {
   local tmp=/data/local/tmp/temp.apk
   cp -f "$1" $tmp
   chmod 644 $tmp
-  su 2000 -c pm install $tmp || pm install $tmp || su 1000 -c pm install $tmp
+  su 2000 -c pm install -g $tmp || pm install -g $tmp || su 1000 -c pm install -g $tmp
   local res=$?
   rm -f $tmp
-  # Note: change this will kill self
-  [ $res != 0 ] && appops set "$2" REQUEST_INSTALL_PACKAGES allow
+  if [ $res = 0 ]; then
+    appops set "$2" REQUEST_INSTALL_PACKAGES allow
+  fi
   return $res
 }
 

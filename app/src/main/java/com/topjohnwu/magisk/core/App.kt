@@ -10,6 +10,7 @@ import com.topjohnwu.magisk.StubApk
 import com.topjohnwu.magisk.core.di.ServiceLocator
 import com.topjohnwu.magisk.core.utils.*
 import com.topjohnwu.magisk.ui.surequest.SuRequestActivity
+import com.topjohnwu.magisk.view.Notifications
 import com.topjohnwu.superuser.Shell
 import com.topjohnwu.superuser.internal.UiThreadHandler
 import com.topjohnwu.superuser.ipc.RootService
@@ -72,6 +73,7 @@ open class App() : Application() {
 
         refreshLocale()
         resources.patch()
+        Notifications.setup()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {

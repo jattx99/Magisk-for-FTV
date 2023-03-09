@@ -1,6 +1,11 @@
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.*
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.InputStream
 import java.io.PrintStream
 import java.security.SecureRandom
 import java.util.*
@@ -72,122 +77,149 @@ fun genKeyData(keysDir: File, outSrc: File) {
     }
 }
 
-fun genStubManifest(srcDir: File, outDir: File): String {
-    outDir.deleteRecursively()
+@CacheableTask
+abstract class ManifestUpdater: DefaultTask() {
+    @get:Input
+    abstract val applicationId: Property<String>
 
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val mergedManifest: RegularFileProperty
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val factoryClassDir: DirectoryProperty
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val appClassDir: DirectoryProperty
+
+    @get:OutputFile
+    abstract val outputManifest: RegularFileProperty
+
+    @TaskAction
+    fun taskAction() {
+        fun String.ind(level: Int) = replaceIndentByMargin("    ".repeat(level))
+
+        val cmpList = mutableListOf<String>()
+
+        cmpList.add("""
+            |<provider
+            |    android:name="x.COMPONENT_PLACEHOLDER_0"
+            |    android:authorities="${'$'}{applicationId}.provider"
+            |    android:directBootAware="true"
+            |    android:exported="false"
+            |    android:grantUriPermissions="true" />""".ind(2)
+        )
+
+        cmpList.add("""
+            |<receiver
+            |    android:name="x.COMPONENT_PLACEHOLDER_1"
+            |    android:exported="false">
+            |    <intent-filter>
+            |        <action android:name="android.intent.action.LOCALE_CHANGED" />
+            |        <action android:name="android.intent.action.UID_REMOVED" />
+            |        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            |    </intent-filter>
+            |    <intent-filter>
+            |        <action android:name="android.intent.action.PACKAGE_REPLACED" />
+            |        <action android:name="android.intent.action.PACKAGE_FULLY_REMOVED" />
+            |
+            |        <data android:scheme="package" />
+            |    </intent-filter>
+            |</receiver>""".ind(2)
+        )
+
+        cmpList.add("""
+            |<activity
+            |    android:name="x.COMPONENT_PLACEHOLDER_2"
+            |    android:exported="true">
+            |    <intent-filter>
+            |        <action android:name="android.intent.action.MAIN" />
+            |        <category android:name="android.intent.category.LAUNCHER" />
+            |    </intent-filter>
+            |</activity>""".ind(2)
+        )
+
+        cmpList.add("""
+            |<activity
+            |    android:name="x.COMPONENT_PLACEHOLDER_3"
+            |    android:directBootAware="true"
+            |    android:exported="false"
+            |    android:taskAffinity="">
+            |    <intent-filter>
+            |        <action android:name="android.intent.action.VIEW"/>
+            |        <category android:name="android.intent.category.DEFAULT"/>
+            |    </intent-filter>
+            |</activity>""".ind(2)
+        )
+
+        cmpList.add("""
+            |<service
+            |    android:name="x.COMPONENT_PLACEHOLDER_4"
+            |    android:exported="false" />""".ind(2)
+        )
+
+        cmpList.add("""
+            |<service
+            |    android:name="x.COMPONENT_PLACEHOLDER_5"
+            |    android:exported="false"
+            |    android:permission="android.permission.BIND_JOB_SERVICE" />""".ind(2)
+        )
+
+        // Shuffle the order of the components
+        cmpList.shuffle(RANDOM)
+        val (factoryPkg, factoryClass) = factoryClassDir.asFileTree.first().let {
+            it.parentFile.name to it.name.removeSuffix(".java")
+        }
+        val (appPkg, appClass) = appClassDir.asFileTree.first().let {
+            it.parentFile.name to it.name.removeSuffix(".java")
+        }
+        val components = cmpList.joinToString("\n\n")
+            .replace("\${applicationId}", applicationId.get())
+        val manifest = mergedManifest.asFile.get().readText().replace(Regex(".*\\<application"), """
+            |<application
+            |    android:appComponentFactory="$factoryPkg.$factoryClass"
+            |    android:name="$appPkg.$appClass"""".ind(1)
+        ).replace(Regex(".*\\<\\/application"), components + "\n    </application")
+        outputManifest.get().asFile.writeText(manifest)
+    }
+}
+
+
+fun genStubClasses(factoryOutDir: File, appOutDir: File) {
     fun String.ind(level: Int) = replaceIndentByMargin("    ".repeat(level))
 
-    val cmpList = mutableListOf<String>()
+    val classNameGenerator = sequence {
+        fun notJavaKeyword(name: String) = when (name) {
+            "do", "if", "for", "int", "new", "try" -> false
+            else -> true
+        }
 
-    cmpList.add(
-        """
-        |<provider
-        |    android:name="%s"
-        |    android:authorities="${'$'}{applicationId}.provider"
-        |    android:directBootAware="true"
-        |    android:exported="false"
-        |    android:grantUriPermissions="true" />""".ind(2)
-    )
+        fun List<String>.process() = asSequence()
+            .filter(::notJavaKeyword)
+            // Distinct by lower case to support case insensitive file systems
+            .distinctBy { it.lowercase() }
 
-    cmpList.add(
-        """
-        |<receiver
-        |    android:name="%s"
-        |    android:exported="false">
-        |    <intent-filter>
-        |        <action android:name="android.intent.action.LOCALE_CHANGED" />
-        |        <action android:name="android.intent.action.UID_REMOVED" />
-        |        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-        |    </intent-filter>
-        |    <intent-filter>
-        |        <action android:name="android.intent.action.PACKAGE_REPLACED" />
-        |        <action android:name="android.intent.action.PACKAGE_FULLY_REMOVED" />
-        |
-        |        <data android:scheme="package" />
-        |    </intent-filter>
-        |</receiver>""".ind(2)
-    )
+        val names = mutableListOf<String>()
+        names.addAll(c1)
+        names.addAll(c2.process().take(30))
+        names.addAll(c3.process().take(30))
+        names.shuffle(RANDOM)
 
-    cmpList.add(
-        """
-        |<activity
-        |    android:name="%s"
-        |    android:exported="true">
-        |    <intent-filter>
-        |        <action android:name="android.intent.action.MAIN" />
-        |        <category android:name="android.intent.category.LAUNCHER" />
-        |    </intent-filter>
-        |</activity>""".ind(2)
-    )
+        while (true) {
+            val cls = StringBuilder()
+            cls.append(names.random(kRANDOM))
+            cls.append('.')
+            cls.append(names.random(kRANDOM))
+            // Old Android does not support capitalized package names
+            // Check Android 7.0.0 PackageParser#buildClassName
+            yield(cls.toString().replaceFirstChar { it.lowercase() })
+        }
+    }.distinct().iterator()
 
-    cmpList.add(
-        """
-        |<activity
-        |    android:name="%s"
-        |    android:directBootAware="true"
-        |    android:exported="false"
-        |    android:taskAffinity=""
-        |    tools:ignore="AppLinkUrlError">
-        |    <intent-filter>
-        |        <action android:name="android.intent.action.VIEW"/>
-        |        <category android:name="android.intent.category.DEFAULT"/>
-        |    </intent-filter>
-        |</activity>""".ind(2)
-    )
-
-    cmpList.add(
-        """
-        |<service
-        |    android:name="%s"
-        |    android:exported="false" />""".ind(2)
-    )
-
-    cmpList.add(
-        """
-        |<service
-        |    android:name="%s"
-        |    android:exported="false"
-        |    android:permission="android.permission.BIND_JOB_SERVICE" />""".ind(2)
-    )
-
-    val names = mutableListOf<String>()
-    names.addAll(c1)
-    names.addAll(c2.subList(0, 10))
-    names.addAll(c3.subList(0, 10))
-    names.shuffle(RANDOM)
-
-    val pkgNames = names
-        // Distinct by lower case to support case insensitive file systems
-        .distinctBy { it.toLowerCase(Locale.ROOT) }
-        // Old Android does not support capitalized package names
-        // Check Android 7.0.0 PackageParser#buildClassName
-        .map { it.decapitalize(Locale.ROOT) }
-
-    fun isJavaKeyword(name: String) = when (name) {
-        "do", "if", "for", "int", "new", "try" -> true
-        else -> false
-    }
-
-    val cmps = mutableListOf<String>()
-    val usedNames = mutableListOf<String>()
-
-    fun genCmpName(): String {
-        var pkgName: String
-        do {
-            pkgName = pkgNames.random(kRANDOM)
-        } while (isJavaKeyword(pkgName))
-
-        var clzName: String
-        do {
-            clzName = names.random(kRANDOM)
-        } while (isJavaKeyword(clzName))
-        val cmp = "${pkgName}.${clzName}"
-        usedNames.add(cmp)
-        return cmp
-    }
-
-    fun genClass(type: String) {
-        val clzName = genCmpName()
+    fun genClass(type: String, outDir: File) {
+        val clzName = classNameGenerator.next()
         val (pkg, name) = clzName.split('.')
         val pkgDir = File(outDir, pkg)
         pkgDir.mkdirs()
@@ -197,23 +229,11 @@ fun genStubManifest(srcDir: File, outDir: File): String {
         }
     }
 
-    // Generate 2 non redirect-able classes
-    genClass("DelegateComponentFactory")
-    genClass("DelegateApplication")
-
-    for (gen in cmpList) {
-        val name = genCmpName()
-        cmps.add(gen.format(name))
-    }
-
-    // Shuffle the order of the components
-    cmps.shuffle(RANDOM)
-
-    val xml = File(srcDir, "AndroidManifest.xml").readText()
-    return xml.format(usedNames[0], usedNames[1], cmps.joinToString("\n\n"))
+    genClass("DelegateComponentFactory", factoryOutDir)
+    genClass("DelegateApplication", appOutDir)
 }
 
-fun genEncryptedResources(res: InputStream, outDir: File) {
+fun genEncryptedResources(res: ByteArray, outDir: File) {
     val mainPkgDir = File(outDir, "com/topjohnwu/magisk")
     mainPkgDir.mkdirs()
 
@@ -227,7 +247,7 @@ fun genEncryptedResources(res: InputStream, outDir: File) {
     cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(iv))
     val bos = ByteArrayOutputStream()
 
-    res.use {
+    ByteArrayInputStream(res).use {
         CipherOutputStream(bos, cipher).use { os ->
             it.transferTo(os)
         }

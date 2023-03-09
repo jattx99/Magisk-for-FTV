@@ -15,14 +15,14 @@ void MagiskInit::patch_sepolicy(const char *in, const char *out) {
     sepol->magisk_rules();
 
     // Custom rules
-    if (!custom_rules_dir.empty()) {
-        if (auto dir = xopen_dir(custom_rules_dir.data())) {
-            for (dirent *entry; (entry = xreaddir(dir.get()));) {
-                auto rule = custom_rules_dir + "/" + entry->d_name + "/sepolicy.rule";
-                if (xaccess(rule.data(), R_OK) == 0) {
-                    LOGD("Loading custom sepolicy patch: [%s]\n", rule.data());
-                    sepol->load_rule_file(rule.data());
-                }
+    if (auto dir = xopen_dir(RULESDIR)) {
+        for (dirent *entry; (entry = xreaddir(dir.get()));) {
+            auto rule = RULESDIR "/"s + entry->d_name + "/sepolicy.rule";
+            if (xaccess(rule.data(), R_OK) == 0 &&
+                access((RULESDIR "/"s + entry->d_name + "/disable").data(), F_OK) != 0 &&
+                access((RULESDIR "/"s + entry->d_name + "/remove").data(), F_OK) != 0) {
+                LOGD("Loading custom sepolicy patch: [%s]\n", rule.data());
+                sepol->load_rule_file(rule.data());
             }
         }
     }
@@ -71,7 +71,7 @@ bool MagiskInit::hijack_sepolicy() {
         // This only happens on Android 8.0 - 9.0
 
         char buf[4096];
-        snprintf(buf, sizeof(buf), "%s/fstab/compatible", config->dt_dir);
+        ssprintf(buf, sizeof(buf), "%s/fstab/compatible", config->dt_dir);
         dt_compat = full_read(buf);
         if (dt_compat.empty()) {
             // Device does not do early mount and uses monolithic policy
@@ -96,19 +96,18 @@ bool MagiskInit::hijack_sepolicy() {
 
     // Read all custom rules into memory
     string rules;
-    if (!custom_rules_dir.empty()) {
-        if (auto dir = xopen_dir(custom_rules_dir.data())) {
-            for (dirent *entry; (entry = xreaddir(dir.get()));) {
-                auto rule_file = custom_rules_dir + "/" + entry->d_name + "/sepolicy.rule";
-                if (xaccess(rule_file.data(), R_OK) == 0) {
-                    LOGD("Load custom sepolicy patch: [%s]\n", rule_file.data());
-                    full_read(rule_file.data(), rules);
-                    rules += '\n';
-                }
+    if (auto dir = xopen_dir(RULESDIR)) {
+        for (dirent *entry; (entry = xreaddir(dir.get()));) {
+            auto rule_file = RULESDIR "/"s + entry->d_name + "/sepolicy.rule";
+            if (xaccess(rule_file.data(), R_OK) == 0 &&
+                access((RULESDIR "/"s + entry->d_name + "/disable").data(), F_OK) != 0 &&
+                access((RULESDIR "/"s + entry->d_name + "/remove").data(), F_OK) != 0) {
+                LOGD("Load custom sepolicy patch: [%s]\n", rule_file.data());
+                full_read(rule_file.data(), rules);
+                rules += '\n';
             }
         }
     }
-
     // Create a new process waiting for init operations
     if (xfork()) {
         // In parent, return and continue boot process
@@ -121,7 +120,7 @@ bool MagiskInit::hijack_sepolicy() {
         int fd = xopen(MOCK_COMPAT, O_WRONLY);
 
         char buf[4096];
-        snprintf(buf, sizeof(buf), "%s/fstab/compatible", config->dt_dir);
+        ssprintf(buf, sizeof(buf), "%s/fstab/compatible", config->dt_dir);
         xumount2(buf, MNT_DETACH);
 
         hijack();
