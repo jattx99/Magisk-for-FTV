@@ -1,85 +1,104 @@
-use std::env;
-use std::path::Path;
+#![allow(clippy::missing_safety_doc)]
 
-pub use base;
-use base::libc::{dev_t, makedev};
-use base::read_lines;
-pub use logging::*;
+use logging::setup_klog;
+// Has to be pub so all symbols in that crate is included
+pub use magiskpolicy;
+use mount::{is_device_mounted, switch_root};
+use rootdir::{OverlayAttr, inject_magisk_rc};
 
+#[path = "../include/consts.rs"]
+mod consts;
+mod getinfo;
+mod init;
 mod logging;
+mod mount;
+mod rootdir;
+mod selinux;
+mod twostage;
 
-#[cxx::bridge(namespace = "rust")]
-pub mod ffi2 {
+#[cxx::bridge]
+pub mod ffi {
+    #[derive(Debug)]
+    struct KeyValue {
+        key: String,
+        value: String,
+    }
+
+    struct BootConfig {
+        skip_initramfs: bool,
+        force_normal_boot: bool,
+        rootwait: bool,
+        emulator: bool,
+        slot: [c_char; 3],
+        dt_dir: [c_char; 64],
+        fstab_suffix: [c_char; 32],
+        hardware: [c_char; 32],
+        hardware_plat: [c_char; 32],
+        boot_mode: [c_char; 16],
+        partition_map: Vec<KeyValue>,
+    }
+
+    struct MagiskInit {
+        preinit_dev: String,
+        mount_list: Vec<String>,
+        argv: *mut *mut c_char,
+        config: BootConfig,
+        overlay_con: Vec<OverlayAttr>,
+    }
+
+    unsafe extern "C++" {
+        include!("init.hpp");
+
+        #[cxx_name = "Utf8CStr"]
+        type Utf8CStrRef<'a> = base::Utf8CStrRef<'a>;
+
+        unsafe fn magisk_proxy_main(argc: i32, argv: *mut *mut c_char) -> i32;
+        fn backup_init() -> Utf8CStrRef<'static>;
+
+        // Constants
+        fn split_plat_cil() -> Utf8CStrRef<'static>;
+        fn preload_lib() -> Utf8CStrRef<'static>;
+        fn preload_policy() -> Utf8CStrRef<'static>;
+        fn preload_ack() -> Utf8CStrRef<'static>;
+    }
+
+    #[namespace = "rust"]
     extern "Rust" {
         fn setup_klog();
-        fn print_rules_device() -> i32;
+        fn inject_magisk_rc(fd: i32, tmp_dir: Utf8CStrRef);
+        fn switch_root(path: Utf8CStrRef);
+        fn is_device_mounted(dev: u64, target: Pin<&mut CxxString>) -> bool;
     }
-}
 
-pub fn print_rules_device() -> i32 {
-    const UNKNOWN: i32 = 0;
-    const PERSIST: i32 = UNKNOWN + 1;
-    const METADATA: i32 = PERSIST + 1;
-    const CACHE: i32 = METADATA + 1;
-    const UNENCRYPTED: i32 = CACHE + 1;
-    const DATA: i32 = UNENCRYPTED + 1;
-    const EXISTING: i32 = DATA + 1;
-
-    let encrypted = env::var("ISENCRYPTED").map_or(false, |var| var == "true");
-
-    let mut matched = UNKNOWN;
-    let mut rules_dev: dev_t = 0;
-
-    if let Ok(lines) = read_lines("/proc/self/mountinfo") {
-        for line in lines {
-            if let Ok(line) = line {
-                let new_matched;
-                if line.contains("/.magisk/sepolicy.rules ") {
-                    new_matched = EXISTING;
-                } else if line.contains(" - ext4 ") && !line.contains("/dm-") {
-                    if line.contains(" / /cache ") && matched < CACHE {
-                        new_matched = CACHE;
-                    } else if line.contains(" / /data ") && matched < DATA {
-                        if !encrypted {
-                            new_matched = UNENCRYPTED;
-                        } else if Path::new("/data/unencrypted").is_dir() {
-                            new_matched = DATA;
-                        } else {
-                            continue;
-                        }
-                    } else if line.contains(" / /metadata ") && matched < METADATA {
-                        new_matched = METADATA;
-                    } else if (line.contains(" / /persist ")
-                        || line.contains(" / /mnt/vendor/persist "))
-                        && matched < PERSIST
-                    {
-                        new_matched = PERSIST;
-                    } else {
-                        continue;
-                    }
-                } else {
-                    continue;
-                }
-                if let Some(device) = line.splitn(4, ' ').nth(2) {
-                    device.split_once(':').map(|(a, b)| {
-                        a.parse::<i32>().ok().map(|a| {
-                            b.parse::<i32>().ok().map(|b| {
-                                rules_dev = unsafe { makedev(a, b) };
-                                matched = new_matched;
-                            })
-                        })
-                    });
-                }
-            }
-        }
-        if matched > UNKNOWN {
-            println!("{rules_dev}");
-            return 0;
-        } else {
-            eprintln!("Failed to find sepolicy rules partition");
-        }
-    } else {
-        eprintln!("Error reading /proc/self/mountinfo");
+    // BootConfig
+    extern "Rust" {
+        fn print(self: &BootConfig);
     }
-    return 1;
+    unsafe extern "C++" {
+        fn init(self: &mut BootConfig);
+        type kv_pairs;
+        fn set(self: &mut BootConfig, config: &kv_pairs);
+    }
+
+    // MagiskInit
+    extern "Rust" {
+        type OverlayAttr;
+        fn parse_config_file(self: &mut MagiskInit);
+        fn mount_overlay(self: &mut MagiskInit, dest: Utf8CStrRef);
+        fn handle_sepolicy(self: &mut MagiskInit);
+        fn restore_overlay_contexts(self: &MagiskInit);
+    }
+    unsafe extern "C++" {
+        // Used in Rust
+        fn mount_system_root(self: &mut MagiskInit) -> bool;
+        fn patch_rw_root(self: &mut MagiskInit);
+        fn patch_ro_root(self: &mut MagiskInit);
+
+        // Used in C++
+        unsafe fn setup_tmp(self: &mut MagiskInit, path: *const c_char);
+        fn collect_devices(self: &MagiskInit);
+        fn mount_preinit_dir(self: &mut MagiskInit);
+        unsafe fn find_block(self: &MagiskInit, partname: *const c_char) -> u64;
+        unsafe fn patch_fissiond(self: &mut MagiskInit, tmp_path: *const c_char);
+    }
 }

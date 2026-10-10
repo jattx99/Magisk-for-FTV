@@ -1,10 +1,7 @@
 #include <libgen.h>
-#include <sys/types.h>
 #include <sys/stat.h>
 
-#include <magisk.hpp>
-#include <selinux.hpp>
-#include <base.hpp>
+#include <core.hpp>
 
 using namespace std;
 
@@ -26,16 +23,10 @@ int main(int argc, char *argv[]) {
     if (argc < 1)
         return 1;
 
-    enable_selinux();
     cmdline_logging();
     init_argv0(argc, argv);
 
-    string_view argv0 = basename(argv[0]);
-
-    // app_process is actually not an applet
-    if (argv0.starts_with("app_process")) {
-        return app_process_main(argc, argv);
-    }
+    Utf8CStr argv0 = basename(argv[0]);
 
     umask(0);
 
@@ -70,6 +61,6 @@ int main(int argc, char *argv[]) {
             return app.fn(argc, argv);
         }
     }
-    fprintf(stderr, "%s: applet not found\n", argv0.data());
+    fprintf(stderr, "%s: applet not found\n", argv0.c_str());
     return 1;
 }

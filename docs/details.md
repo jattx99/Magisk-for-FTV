@@ -4,7 +4,7 @@
 
 ### Paths in "Magisk tmpfs directory"
 
-Magisk will mount a `tmpfs` directory to store some temporary data. For devices with the `/sbin` folder, it will be chosen as it will also act as an overlay to inject binaries into `PATH`. From Android 11 onwards, the `/sbin` folder might not exist, so Magisk will randomly create a folder under `/dev` and use it as the base folder.
+Magisk will mount a `tmpfs` directory to store some temporary data. For devices with the `/sbin` folder, it will be chosen as it will also act as an overlay to inject binaries into `PATH`. From Android 11 onwards, the `/sbin` folder might not exist, so Magisk will use `/debug_ramdisk` as the base folder.
 
 ```
 # In order to get the current base folder Magisk is using,
@@ -12,39 +12,28 @@ Magisk will mount a `tmpfs` directory to store some temporary data. For devices 
 # Binaries like magisk, magiskinit, and all symlinks to
 # applets are directly stored in this path. This means when
 # this is /sbin, these binaries will be directly in PATH.
-MAGISKBASE=$(magisk --path)
+MAGISKTMP=$(magisk --path)
 
 # Magisk internal stuffs
-MAGISKTMP=$MAGISKBASE/.magisk
-
-# Magisk's BusyBox directory. Within this folder stores
-# the busybox binary and symlinks to all of its applets.
-# Any usage of this directory is deprecated, please
-# directly call /data/adb/magisk/busybox and use
-# BusyBox's ASH Standalone mode.
-# The creation of this path will be removed in the future.
-$MAGISKTMP/busybox
+INTERNALDIR=$MAGISKTMP/.magisk
 
 # /data/adb/modules will be bind mounted here.
 # The original folder is not used due to nosuid mount flag.
-$MAGISKTMP/modules
+$INTERNALDIR/modules
 
 # The current Magisk installation config
-$MAGISKTMP/config
+$INTERNALDIR/config
 
 # Partition mirrors
 # Each directory in this path will be mounted with the
 # partition of its directory name.
 # e.g. system, system_ext, vendor, data ...
-$MAGISKTMP/mirror
-
-# Block devices Magisk creates internally to mount mirrors.
-$MAGISKTMP/block
+$INTERNALDIR/mirror
 
 # Root directory patch files
 # On system-as-root devices, / is not writable.
 # All pre-init patched files are stored here and bind mounted.
-$MAGISKTMP/rootdir
+$INTERNALDIR/rootdir
 ```
 
 ### Paths in `/data`
@@ -121,4 +110,4 @@ Before Android 8.0, all allowed su client domains are allowed to directly connec
 
 After Android 8.0, to reduce relaxation of rules in Android's sandbox, a new SELinux model is deployed. The `magisk` binary is labelled with `magisk_exec` file type, and processes running as allowed su client domains executing the `magisk` binary (this includes the `su` command) will transit to `magisk_client` by using a `type_transition` rule. Rules strictly restrict that only `magisk` domain processes are allowed to attribute files to `magisk_exec`. Direct connection to sockets of `magiskd` are not allowed; the only way to access the daemon is through a `magisk_client` process. These changes allow us to keep the sandbox intact, and keep Magisk specific rules separated from the rest of the policies.
 
-The full set of rules can be found in `magiskpolicy/rules.cpp`.
+The full set of rules can be found in `sepolicy/rules.cpp`.

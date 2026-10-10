@@ -38,6 +38,7 @@ A Magisk module is a folder placed in `/data/adb/modules` with the structure bel
 │   ├── zygisk              <--- This folder contains the module's Zygisk native libraries
 │   │   ├── arm64-v8a.so
 │   │   ├── armeabi-v7a.so
+│   │   ├── riscv64.so
 │   │   ├── x86.so
 │   │   ├── x86_64.so
 │   │   └── unloaded        <--- If exists, the native libraries are incompatible
@@ -53,6 +54,7 @@ A Magisk module is a folder placed in `/data/adb/modules` with the structure bel
 │   ├── post-fs-data.sh     <--- This script will be executed in post-fs-data
 │   ├── service.sh          <--- This script will be executed in late_start service
 |   ├── uninstall.sh        <--- This script will be executed when Magisk removes your module
+|   ├── action.sh           <--- This script will be executed when user click the action button in Magisk app
 │   ├── system.prop         <--- Properties in this file will be loaded as system properties by resetprop
 │   ├── sepolicy.rule       <--- Additional custom sepolicy rules
 │   │
@@ -109,7 +111,7 @@ Update JSON format:
 
 #### Shell scripts (`*.sh`)
 
-Please read the [Boot Scripts](#boot-scripts) section to understand the difference between `post-fs-data.sh` and `service.sh`. For most module developers, `service.sh` should be good enough if you just need to run a boot script.
+Please read the [Boot Scripts](#boot-scripts) section to understand the difference between `post-fs-data.sh` and `service.sh`. For most module developers, `service.sh` should be good enough if you just need to run a boot script. If you need to wait for boot completed, you can use `resetprop -w sys.boot_completed 0`.
 
 In all scripts of your module, please use `MODDIR=${0%/*}` to get your module's base directory path; do **NOT** hardcode your module path in scripts.
 If Zygisk is enabled, the environment variable `ZYGISK_ENABLED` will be set to `1`.
@@ -121,6 +123,8 @@ All files you want to replace/inject should be placed in this folder. This folde
 If you place a file named `.replace` in any of the folders, instead of merging its contents, that folder will directly replace the one in the real system. This can be very handy for swapping out an entire folder.
 
 If you want to replace files in `/vendor`, `/product`, or `/system_ext`, please place them under `system/vendor`, `system/product`, and `system/system_ext` respectively. Magisk will transparently handle whether these partitions are in a separate partition or not.
+
+If you want to remove a specific file or folder, please place a dummy character device with major number 0 and minor number 0 in the same path. For example, if you want to remove `/system/app/GoogleCamera`, you can `mknod GoogleCamera c 0 0` in `$MODDIR/system/app`.
 
 #### Zygisk
 
@@ -136,7 +140,7 @@ If your module requires some additional sepolicy patches, please add those rules
 
 ## Magisk Module Installer
 
-A Magisk module installer is a Magisk module packaged in a zip file that can be flashed in the Magisk app or custom recoveries such as TWRP. The simplest Magisk module installer is just a Magisk module packed as a zip file, in addition to the following files:
+A Magisk module installer is a Magisk module packaged in a zip file that can be flashed in the Magisk app or custom recoveries such as TWRP. The simplest Magisk module installer is just a Magisk module packed as a zip file, in addition to the following files only if the module supports flashing in recovery:
 
 - `update-binary`: Download the latest [module_installer.sh](https://github.com/topjohnwu/Magisk/blob/master/scripts/module_installer.sh) and rename/copy that script as `update-binary`
 - `updater-script`: This file should only contain the string `#MAGISK`
@@ -146,7 +150,7 @@ The module installer script will setup the environment, extract the module files
 ```
 module.zip
 │
-├── META-INF
+├── META-INF                           <--- Only needed for flashing in recovery
 │   └── com
 │       └── google
 │           └── android
@@ -176,39 +180,41 @@ The `customize.sh` script runs in Magisk's BusyBox `ash` shell with "Standalone 
 - `MODPATH` (path): the path where your module files should be installed
 - `TMPDIR` (path): a place where you can temporarily store files
 - `ZIPFILE` (path): your module's installation zip
-- `ARCH` (string): the CPU architecture of the device. Value is either `arm`, `arm64`, `x86`, or `x64`
-- `IS64BIT` (bool): `true` if `$ARCH` is either `arm64` or `x64`
-- `API` (int): the API level (Android version) of the device (e.g. `21` for Android 5.0)
+- `ARCH` (string): the CPU architecture of the device. Value is either `arm`, `arm64`, `x86`, `x64`, or `riscv64`
+- `IS64BIT` (bool): `true` if `$ARCH` is either `arm64`, `x64`, or `riscv64`
+- `API` (int): the API level (Android version) of the device (e.g. `23` for Android 6.0)
 
 ##### Functions
 
 ```
 ui_print <msg>
-    print <msg> to console
+    Print <msg> to console
     Avoid using 'echo' as it will not display in custom recovery's console
 
 abort <msg>
-    print error message <msg> to console and terminate the installation
+    Print error message <msg> to console and terminate the installation
     Avoid using 'exit' as it will skip the termination cleanup steps
 
 set_perm <target> <owner> <group> <permission> [context]
-    if [context] is not set, the default is "u:object_r:system_file:s0"
-    this function is a shorthand for the following commands:
+    If [context] is not specified, the default is "u:object_r:system_file:s0"
+    This function is a shorthand for the following commands:
        chown owner.group target
        chmod permission target
        chcon context target
 
 set_perm_recursive <directory> <owner> <group> <dirpermission> <filepermission> [context]
-    if [context] is not set, the default is "u:object_r:system_file:s0"
-    for all files in <directory>, it will call:
-       set_perm file owner group filepermission context
-    for all directories in <directory> (including itself), it will call:
-       set_perm dir owner group dirpermission context
+    If [context] is not specified, the default is "u:object_r:system_file:s0"
+    This function is a shorthand for the following psuedo code:
+      set_perm <directory> owner group dirpermission context
+      for file in <directory>:
+        set_perm file owner group filepermission context
+      for dir in <directory>:
+        set_perm_recursive dir owner group dirpermission context
 ```
 
 For convenience, you can also declare a list of folders you want to replace in the variable name `REPLACE`. The module installer script will create the `.replace` file into the folders listed in `REPLACE`. For example:
 
-```
+```sh
 REPLACE="
 /system/app/YouTube
 /system/app/Bloatware
@@ -216,6 +222,17 @@ REPLACE="
 ```
 
 The list above will result in the following files being created: `$MODPATH/system/app/YouTube/.replace` and `$MODPATH/system/app/Bloatware/.replace`.
+
+For convenience, you can also declare a list of files/folders you want to remove in the variable name `REMOVE`. The module installer script will create the corresponding dummy devices. For example:
+
+```sh
+REMOVE="
+/system/app/YouTube
+/system/fonts/Roboto.ttf
+"
+```
+
+The list above will result in the following dummy devices being created: `$MODPATH/system/app/YouTube` and `$MODPATH/system/fonts/Roboto.ttf`.
 
 #### Notes
 
@@ -228,7 +245,7 @@ The list above will result in the following files being created: `$MODPATH/syste
 In Magisk, you can run boot scripts in 2 different modes: **post-fs-data** and **late_start service** mode.
 
 - post-fs-data mode
-  - This stage is BLOCKING. The boot process is paused before execution is done, or 10 seconds have passed.
+  - This stage is BLOCKING. The boot process is paused before execution is done, or 40 seconds have passed.
   - Scripts run before any modules are mounted. This allows a module developer to dynamically adjust their modules before it gets mounted.
   - This stage happens before Zygote is started, which pretty much means everything in Android
   - **WARNING:** using `setprop` will deadlock the boot process! Please use `resetprop -n <prop_name> <prop_value>` instead.
@@ -263,7 +280,7 @@ Overlay files shall be placed in the `overlay.d` folder in boot image ramdisk, a
 
 To add additional files which you can refer to in your custom `*.rc` scripts, add them into `overlay.d/sbin`. The 3 rules above do not apply to anything in this folder; instead, they will be directly copied to Magisk's internal `tmpfs` directory (which used to always be `/sbin`).
 
-Starting from Android 11, the `/sbin` folder may no longer exists, and in that scenario, Magisk randomly generates a different `tmpfs` folder each boot. Every occurrence of the pattern `${MAGISKTMP}` in your `*.rc` scripts will be replaced with the Magisk `tmpfs` folder when `magiskinit` injects it into `init.rc`. On pre Android 11 devices, `${MAGISKTMP}` will simply be replaced with `/sbin`, so **NEVER** hardcode `/sbin` in the `*.rc` scripts when referencing these additional files.
+Starting from Android 11, the `/sbin` folder may no longer exists, and in that scenario, Magisk uses `/debug_ramdisk` instead. Every occurrence of the pattern `${MAGISKTMP}` in your `*.rc` scripts will be replaced with the Magisk `tmpfs` folder when `magiskinit` injects it into `init.rc`. On pre Android 11 devices, `${MAGISKTMP}` will simply be replaced with `/sbin`, so **NEVER** hardcode `/sbin` in the `*.rc` scripts when referencing these additional files.
 
 Here is an example of how to setup `overlay.d` with a custom `*.rc` script:
 

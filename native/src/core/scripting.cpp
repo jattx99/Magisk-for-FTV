@@ -2,12 +2,9 @@
 #include <vector>
 #include <sys/wait.h>
 
-#include <magisk.hpp>
+#include <consts.hpp>
 #include <base.hpp>
-#include <selinux.hpp>
-#include <daemon.hpp>
-
-#include "core.hpp"
+#include <core.hpp>
 
 using namespace std;
 
@@ -15,26 +12,112 @@ using namespace std;
 
 static const char *bbpath() {
     static string path;
-    if (path.empty())
-        path = MAGISKTMP + "/" BBPATH "/busybox";
+    path = get_magisk_tmp();
+    path += "/" BBPATH "/busybox";
+    if (access(path.data(), X_OK) != 0) {
+        path = DATABIN "/busybox";
+    }
     return path.data();
 }
 
 static void set_script_env() {
     setenv("ASH_STANDALONE", "1", 1);
     char new_path[4096];
-    sprintf(new_path, "%s:%s", getenv("PATH"), MAGISKTMP.data());
+    ssprintf(new_path, sizeof(new_path), "%s:%s", getenv("PATH"), get_magisk_tmp());
     setenv("PATH", new_path, 1);
-    if (zygisk_enabled)
+    if (MagiskD::Get().zygisk_enabled())
         setenv("ZYGISK_ENABLED", "1", 1);
 };
 
-void exec_script(const char *script) {
+struct exec_t {
+    bool err = false;
+    int fd = -2;
+    void (*pre_exec)() = nullptr;
+    int (*fork)() = xfork;
+    const char **argv = nullptr;
+};
+
+static int exec_command(exec_t &exec) {
+    auto pipefd = array{-1, -1};
+    int outfd = -1;
+
+    if (exec.fd == -1) {
+        if (xpipe2(pipefd.data(), O_CLOEXEC) == -1)
+            return -1;
+        outfd = pipefd[1];
+    } else if (exec.fd >= 0) {
+        outfd = exec.fd;
+    }
+
+    int pid = exec.fork();
+    if (pid < 0) {
+        close(pipefd[0]);
+        close(pipefd[1]);
+        return -1;
+    } else if (pid) {
+        if (exec.fd == -1) {
+            exec.fd = pipefd[0];
+            close(pipefd[1]);
+        }
+        return pid;
+    }
+
+    // Unblock all signals
+    sigset_t set;
+    sigfillset(&set);
+    pthread_sigmask(SIG_UNBLOCK, &set, nullptr);
+
+    if (outfd >= 0) {
+        xdup2(outfd, STDOUT_FILENO);
+        if (exec.err)
+            xdup2(outfd, STDERR_FILENO);
+        close(outfd);
+    }
+
+    // Call the pre-exec callback
+    if (exec.pre_exec)
+        exec.pre_exec();
+
+    execve(exec.argv[0], (char **) exec.argv, environ);
+    PLOGE("execve %s", exec.argv[0]);
+    exit(-1);
+}
+
+template <class ...Args>
+static int exec_command(exec_t &exec, Args &&...args) {
+    const char *argv[] = {args..., nullptr};
+    exec.argv = argv;
+    return exec_command(exec);
+}
+
+template <class ...Args>
+static int exec_command_sync(exec_t &exec, Args &&...args) {
+    const char *argv[] = {args..., nullptr};
+    exec.argv = argv;
+    int pid = exec_command(exec);
+    if (pid < 0)
+        return -1;
+    int status;
+    waitpid(pid, &status, 0);
+    return WEXITSTATUS(status);
+}
+
+template <class ...Args>
+static void exec_command_async(Args &&...args) {
+    const char *argv[] = {args..., nullptr};
+    exec_t exec {
+        .fork = fork_dont_care,
+        .argv = argv,
+    };
+    exec_command(exec);
+}
+
+void exec_script(Utf8CStr script) {
     exec_t exec {
         .pre_exec = set_script_env,
         .fork = fork_no_orphan
     };
-    exec_command_sync(exec, BBEXEC_CMD, script);
+    exec_command_sync(exec, BBEXEC_CMD, script.c_str());
 }
 
 static timespec pfs_timeout;
@@ -74,10 +157,10 @@ if (pfs) { \
     exit(0); \
 }
 
-void exec_common_scripts(const char *stage) {
-    LOGI("* Running %s.d scripts\n", stage);
+void exec_common_scripts(Utf8CStr stage) {
+    LOGI("* Running %s.d scripts\n", stage.c_str());
     char path[4096];
-    char *name = path + sprintf(path, SECURE_DIR "/%s.d", stage);
+    char *name = path + sprintf(path, SECURE_DIR "/%s.d", stage.c_str());
     auto dir = xopen_dir(path);
     if (!dir) return;
 
@@ -96,7 +179,7 @@ void exec_common_scripts(const char *stage) {
         if (entry->d_type == DT_REG) {
             if (faccessat(dfd, entry->d_name, X_OK, 0) != 0)
                 continue;
-            LOGI("%s.d: exec [%s]\n", stage, entry->d_name);
+            LOGI("%s.d: exec [%s]\n", stage.c_str(), entry->d_name);
             strcpy(name, entry->d_name);
             exec_t exec {
                 .pre_exec = set_script_env,
@@ -116,12 +199,12 @@ static bool operator>(const timespec &a, const timespec &b) {
     return a.tv_nsec > b.tv_nsec;
 }
 
-void exec_module_scripts(const char *stage, const vector<string_view> &modules) {
-    LOGI("* Running module %s scripts\n", stage);
-    if (modules.empty())
+void exec_module_scripts(Utf8CStr stage, const rust::Vec<ModuleInfo> &module_list) {
+    LOGI("* Running module %s scripts\n", stage.c_str());
+    if (module_list.empty())
         return;
 
-    bool pfs = stage == "post-fs-data"sv;
+    bool pfs = stage == "post-fs-data";
     if (pfs) {
         timespec now{};
         clock_gettime(CLOCK_MONOTONIC, &now);
@@ -133,12 +216,11 @@ void exec_module_scripts(const char *stage, const vector<string_view> &modules) 
     PFS_SETUP()
 
     char path[4096];
-    for (auto &m : modules) {
-        const char *module = m.data();
-        sprintf(path, MODULEROOT "/%s/%s.sh", module, stage);
+    for (auto &m : module_list) {
+        sprintf(path, MODULEROOT "/%.*s/%s.sh", (int) m.name.size(), m.name.data(), stage.c_str());
         if (access(path, F_OK) == -1)
             continue;
-        LOGI("%s: exec [%s.sh]\n", module, stage);
+        LOGI("%.*s: exec [%s.sh]\n", (int) m.name.size(), m.name.data(), stage.c_str());
         exec_t exec {
             .pre_exec = set_script_env,
             .fork = pfs ? xfork : fork_dont_care
@@ -153,34 +235,28 @@ void exec_module_scripts(const char *stage, const vector<string_view> &modules) 
 constexpr char install_script[] = R"EOF(
 APK=%s
 log -t Magisk "pm_install: $APK"
-log -t Magisk "pm_install: $(pm install -g -r $APK 2>&1)"
-appops set %s REQUEST_INSTALL_PACKAGES allow
+log -t Magisk "pm_install: $(pm install --user all -g -r $APK 2>&1)"
+appops set --user all %s REQUEST_INSTALL_PACKAGES allow
 rm -f $APK
 )EOF";
 
-void install_apk(const char *apk) {
-    setfilecon(apk, "u:object_r:" SEPOL_FILE_TYPE ":s0");
-    exec_t exec {
-        .fork = fork_no_orphan
-    };
+void install_apk(Utf8CStr apk) {
+    setfilecon(apk.c_str(), MAGISK_FILE_CON);
     char cmds[sizeof(install_script) + 4096];
-    ssprintf(cmds, sizeof(cmds), install_script, apk, JAVA_PACKAGE_NAME);
-    exec_command_sync(exec, "/system/bin/sh", "-c", cmds);
+    ssprintf(cmds, sizeof(cmds), install_script, apk.c_str(), JAVA_PACKAGE_NAME);
+    exec_command_async("/system/bin/sh", "-c", cmds);
 }
 
 constexpr char uninstall_script[] = R"EOF(
 PKG=%s
 log -t Magisk "pm_uninstall: $PKG"
-log -t Magisk "pm_uninstall: $(pm uninstall $PKG 2>&1)"
+log -t Magisk "pm_uninstall: $(pm uninstall --user all $PKG 2>&1)"
 )EOF";
 
-void uninstall_pkg(const char *pkg) {
-    exec_t exec {
-        .fork = fork_no_orphan
-    };
+void uninstall_pkg(Utf8CStr pkg) {
     char cmds[sizeof(uninstall_script) + 256];
-    ssprintf(cmds, sizeof(cmds), uninstall_script, pkg);
-    exec_command_sync(exec, "/system/bin/sh", "-c", cmds);
+    ssprintf(cmds, sizeof(cmds), uninstall_script, pkg.c_str());
+    exec_command_async("/system/bin/sh", "-c", cmds);
 }
 
 constexpr char clear_script[] = R"EOF(
@@ -191,12 +267,9 @@ log -t Magisk "pm_clear: $(pm clear --user $USER $PKG 2>&1)"
 )EOF";
 
 void clear_pkg(const char *pkg, int user_id) {
-    exec_t exec {
-        .fork = fork_no_orphan
-    };
     char cmds[sizeof(clear_script) + 288];
     ssprintf(cmds, sizeof(cmds), clear_script, pkg, user_id);
-    exec_command_sync(exec, "/system/bin/sh", "-c", cmds);
+    exec_command_async("/system/bin/sh", "-c", cmds);
 }
 
 [[noreturn]] __printflike(2, 3)
@@ -210,33 +283,33 @@ static void abort(FILE *fp, const char *fmt, ...) {
 }
 
 constexpr char install_module_script[] = R"EOF(
-exec $(magisk --path)/.magisk/busybox/busybox sh -c '
 . /data/adb/magisk/util_functions.sh
 install_module
-exit 0'
+exit 0
 )EOF";
 
-void install_module(const char *file) {
+void install_module(Utf8CStr file) {
     if (getuid() != 0)
         abort(stderr, "Run this command with root");
     if (access(DATABIN, F_OK) ||
-        access(DATABIN "/busybox", X_OK) ||
+        access(bbpath(), X_OK) ||
         access(DATABIN "/util_functions.sh", F_OK))
         abort(stderr, "Incomplete Magisk install");
-    if (access(file, F_OK))
-        abort(stderr, "'%s' does not exist", file);
+    if (access(file.c_str(), F_OK))
+        abort(stderr, "'%s' does not exist", file.c_str());
 
-    char *zip = realpath(file, nullptr);
+    char *zip = realpath(file.c_str(), nullptr);
     setenv("OUTFD", "1", 1);
     setenv("ZIPFILE", zip, 1);
     setenv("ASH_STANDALONE", "1", 1);
+    setenv("MAGISKTMP", get_magisk_tmp(), 0);
     free(zip);
 
     int fd = xopen("/dev/null", O_RDONLY);
     xdup2(fd, STDERR_FILENO);
     close(fd);
 
-    const char *argv[] = { "/system/bin/sh", "-c", install_module_script, nullptr };
+    const char *argv[] = { BBEXEC_CMD, "-c", install_module_script, nullptr };
     execve(argv[0], (char **) argv, environ);
     abort(stdout, "Failed to execute BusyBox shell");
 }

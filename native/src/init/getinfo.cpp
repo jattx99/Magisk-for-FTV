@@ -1,6 +1,5 @@
 #include <sys/sysmacros.h>
 #include <sys/types.h>
-#include <sys/stat.h>
 #include <linux/input.h>
 #include <fcntl.h>
 #include <vector>
@@ -10,8 +9,6 @@
 #include "init.hpp"
 
 using namespace std;
-
-vector<string> mount_list;
 
 template<char... cs> using chars = integer_sequence<char, cs...>;
 
@@ -41,16 +38,16 @@ static string extract_quoted_str_until(chars<escapes...>, chars<breaks...>,
 }
 
 // Parse string into key value pairs.
-// The string format: [delim][key][padding]=[padding][value][delim]
-template<char delim, char... padding>
+// The string format: [delim][key][padding][eq][padding][value][delim]
+template<char delim, char eq, char... padding>
 static kv_pairs parse_impl(chars<padding...>, string_view str) {
     kv_pairs kv;
-    char skip_array[] = {'=', padding...};
+    char skip_array[] = {eq, padding...};
     string_view skip(skip_array, std::size(skip_array));
     bool quoted = false;
     for (size_t pos = 0u; pos < str.size(); pos = str.find_first_not_of(delim, pos)) {
         auto key = extract_quoted_str_until(
-                chars<padding..., delim>{}, chars<'='>{}, str, pos, quoted);
+                chars<padding..., delim>{}, chars<eq>{}, str, pos, quoted);
         pos = str.find_first_not_of(skip, pos);
         if (pos == string_view::npos || str[pos] == delim) {
             kv.emplace_back(key, "");
@@ -63,10 +60,13 @@ static kv_pairs parse_impl(chars<padding...>, string_view str) {
 }
 
 static kv_pairs parse_cmdline(string_view str) {
-    return parse_impl<' '>(chars<>{}, str);
+    return parse_impl<' ', '='>(chars<>{}, str);
 }
 static kv_pairs parse_bootconfig(string_view str) {
-    return parse_impl<'\n'>(chars<' '>{}, str);
+    return parse_impl<'\n', '='>(chars<' '>{}, str);
+}
+static kv_pairs parse_partition_map(std::string_view str) {
+    return parse_impl<';', ','>(chars<>{}, str);
 }
 
 #define test_bit(bit, array) (array[bit / 8] & (1 << (bit % 8)))
@@ -117,56 +117,7 @@ static bool check_key_combo() {
     return false;
 }
 
-static FILE *kmsg;
-extern "C" void klog_write(const char *msg, int len) {
-    fprintf(kmsg, "%.*s", len, msg);
-}
-
-static int klog_with_rs(LogLevel level, const char *fmt, va_list ap) {
-    char buf[4096];
-    strscpy(buf, "magiskinit: ", sizeof(buf));
-    int len = vssprintf(buf + 12, sizeof(buf) - 12, fmt, ap) + 12;
-    log_with_rs(level, rust::Str(buf, len));
-    return len;
-}
-
-void setup_klog() {
-    // Shut down first 3 fds
-    int fd;
-    if (access("/dev/null", W_OK) == 0) {
-        fd = xopen("/dev/null", O_RDWR | O_CLOEXEC);
-    } else {
-        mknod("/null", S_IFCHR | 0666, makedev(1, 3));
-        fd = xopen("/null", O_RDWR | O_CLOEXEC);
-        unlink("/null");
-    }
-    xdup3(fd, STDIN_FILENO, O_CLOEXEC);
-    xdup3(fd, STDOUT_FILENO, O_CLOEXEC);
-    xdup3(fd, STDERR_FILENO, O_CLOEXEC);
-    if (fd > STDERR_FILENO)
-        close(fd);
-
-    if (access("/dev/kmsg", W_OK) == 0) {
-        fd = xopen("/dev/kmsg", O_WRONLY | O_CLOEXEC);
-    } else {
-        mknod("/kmsg", S_IFCHR | 0666, makedev(1, 11));
-        fd = xopen("/kmsg", O_WRONLY | O_CLOEXEC);
-        unlink("/kmsg");
-    }
-
-    kmsg = fdopen(fd, "w");
-    setbuf(kmsg, nullptr);
-    rust::setup_klog();
-    cpp_logger = klog_with_rs;
-
-    // Disable kmsg rate limiting
-    if (FILE *rate = fopen("/proc/sys/kernel/printk_devkmsg", "w")) {
-        fprintf(rate, "on\n");
-        fclose(rate);
-    }
-}
-
-void BootConfig::set(const kv_pairs &kv) {
+void BootConfig::set(const kv_pairs &kv) noexcept {
     for (const auto &[key, value] : kv) {
         if (key == "androidboot.slot_suffix") {
             // Many Amlogic devices are A-only but have slot_suffix...
@@ -174,10 +125,10 @@ void BootConfig::set(const kv_pairs &kv) {
                 LOGW("Skip invalid androidboot.slot_suffix=[normal]\n");
                 continue;
             }
-            strscpy(slot, value.data(), sizeof(slot));
+            strscpy(slot.data(), value.data(), slot.size());
         } else if (key == "androidboot.slot") {
             slot[0] = '_';
-            strscpy(slot + 1, value.data(), sizeof(slot) - 1);
+            strscpy(slot.data() + 1, value.data(), slot.size() - 1);
         } else if (key == "skip_initramfs") {
             skip_initramfs = true;
         } else if (key == "androidboot.force_normal_boot") {
@@ -185,67 +136,53 @@ void BootConfig::set(const kv_pairs &kv) {
         } else if (key == "rootwait") {
             rootwait = true;
         } else if (key == "androidboot.android_dt_dir") {
-            strscpy(dt_dir, value.data(), sizeof(dt_dir));
+            strscpy(dt_dir.data(), value.data(), dt_dir.size());
         } else if (key == "androidboot.hardware") {
-            strscpy(hardware, value.data(), sizeof(hardware));
+            strscpy(hardware.data(), value.data(), hardware.size());
         } else if (key == "androidboot.hardware.platform") {
-            strscpy(hardware_plat, value.data(), sizeof(hardware_plat));
+            strscpy(hardware_plat.data(), value.data(), hardware_plat.size());
         } else if (key == "androidboot.fstab_suffix") {
-            strscpy(fstab_suffix, value.data(), sizeof(fstab_suffix));
+            strscpy(fstab_suffix.data(), value.data(), fstab_suffix.size());
+        } else if (key == "androidboot.mode") {
+            strscpy(boot_mode.data(), value.data(), boot_mode.size());
         } else if (key == "qemu") {
             emulator = true;
+        } else if (key == "androidboot.partition_map") {
+            // androidboot.partition_map allows mapping a partition name to a raw block device.
+            // For example, "androidboot.partition_map=vdb,metadata;vdc,userdata" maps
+            // "vdb" to "metadata", and "vdc" to "userdata".
+            // https://android.googlesource.com/platform/system/core/+/refs/heads/android13-release/init/devices.cpp#191
+            for (const auto &[k, v]: parse_partition_map(value)) {
+                partition_map.emplace_back(k, v);
+            }
         }
     }
 }
 
-void BootConfig::print() {
-    LOGD("skip_initramfs=[%d]\n", skip_initramfs);
-    LOGD("force_normal_boot=[%d]\n", force_normal_boot);
-    LOGD("rootwait=[%d]\n", rootwait);
-    LOGD("slot=[%s]\n", slot);
-    LOGD("dt_dir=[%s]\n", dt_dir);
-    LOGD("fstab_suffix=[%s]\n", fstab_suffix);
-    LOGD("hardware=[%s]\n", hardware);
-    LOGD("hardware.platform=[%s]\n", hardware_plat);
-    LOGD("emulator=[%d]\n", emulator);
-}
-
 #define read_dt(name, key)                                          \
-ssprintf(file_name, sizeof(file_name), "%s/" name, config->dt_dir); \
+ssprintf(file_name, sizeof(file_name), "%s/" name, dt_dir.data());  \
 if (access(file_name, R_OK) == 0) {                                 \
     string data = full_read(file_name);                             \
     if (!data.empty()) {                                            \
         data.pop_back();                                            \
-        strscpy(config->key, data.data(), sizeof(config->key));     \
+        strscpy(key.data(), data.data(), key.size());               \
     }                                                               \
 }
 
-void load_kernel_info(BootConfig *config) {
-    // Get kernel data using procfs and sysfs
-    xmkdir("/proc", 0755);
-    xmount("proc", "/proc", "proc", 0, nullptr);
-    xmkdir("/sys", 0755);
-    xmount("sysfs", "/sys", "sysfs", 0, nullptr);
+void BootConfig::init() noexcept {
+    set(parse_cmdline(full_read("/proc/cmdline")));
+    set(parse_bootconfig(full_read("/proc/bootconfig")));
 
-    mount_list.emplace_back("/proc");
-    mount_list.emplace_back("/sys");
-
-    // Log to kernel
-    setup_klog();
-
-    config->set(parse_cmdline(full_read("/proc/cmdline")));
-    config->set(parse_bootconfig(full_read("/proc/bootconfig")));
-
-    parse_prop_file("/.backup/.magisk", [=](auto key, auto value) -> bool {
+    parse_prop_file("/.backup/.magisk", [&](auto key, auto value) -> bool {
         if (key == "RECOVERYMODE" && value == "true") {
-            config->skip_initramfs = config->emulator || !check_key_combo();
+            skip_initramfs = emulator || !check_key_combo();
             return false;
         }
         return true;
     });
 
-    if (config->dt_dir[0] == '\0')
-        strscpy(config->dt_dir, DEFAULT_DT_DIR, sizeof(config->dt_dir));
+    if (dt_dir[0] == '\0')
+        strscpy(dt_dir.data(), DEFAULT_DT_DIR, dt_dir.size());
 
     char file_name[128];
     read_dt("fstab_suffix", fstab_suffix)
@@ -253,21 +190,5 @@ void load_kernel_info(BootConfig *config) {
     read_dt("hardware.platform", hardware_plat)
 
     LOGD("Device config:\n");
-    config->print();
-}
-
-bool check_two_stage() {
-    if (access("/apex", F_OK) == 0)
-        return true;
-    if (access("/system/bin/init", F_OK) == 0)
-        return true;
-    // If we still have no indication, parse the original init and see what's up
-    auto init = mmap_data(backup_init());
-    return init.contains("selinux_setup");
-}
-
-const char *backup_init() {
-    if (access("/.backup/init.real", F_OK) == 0)
-        return "/.backup/init.real";
-    return "/.backup/init";
+    print();
 }

@@ -1,144 +1,288 @@
-use std::cmp::min;
-use std::ffi::CStr;
+use super::argh::{EarlyExit, MissingRequirements};
+use crate::{Utf8CStr, Utf8CString, cstr, ffi};
+use libc::c_char;
 use std::fmt::Arguments;
-use std::{fmt, slice};
-
-struct BufFmtWriter<'a> {
-    buf: &'a mut [u8],
-    used: usize,
-}
-
-impl<'a> BufFmtWriter<'a> {
-    fn new(buf: &'a mut [u8]) -> Self {
-        BufFmtWriter { buf, used: 0 }
-    }
-}
-
-impl<'a> fmt::Write for BufFmtWriter<'a> {
-    // The buffer should always be null terminated
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        if self.used >= self.buf.len() - 1 {
-            // Silent truncate
-            return Ok(());
-        }
-        let remain = &mut self.buf[self.used..];
-        let s_bytes = s.as_bytes();
-        let copied = min(s_bytes.len(), remain.len() - 1);
-        remain[..copied].copy_from_slice(&s_bytes[..copied]);
-        self.used += copied;
-        self.buf[self.used] = b'\0';
-        // Silent truncate
-        Ok(())
-    }
-}
-
-pub fn fmt_to_buf(buf: &mut [u8], args: Arguments) -> usize {
-    let mut w = BufFmtWriter::new(buf);
-    if let Ok(()) = fmt::write(&mut w, args) {
-        w.used
-    } else {
-        0
-    }
-}
-
-#[macro_export]
-macro_rules! bfmt {
-    ($buf:expr, $($args:tt)*) => {
-        $crate::fmt_to_buf($buf, format_args!($($args)*));
-    };
-}
-
-#[macro_export]
-macro_rules! bfmt_cstr {
-    ($buf:expr, $($args:tt)*) => {{
-        let len = $crate::fmt_to_buf($buf, format_args!($($args)*));
-        unsafe { std::ffi::CStr::from_bytes_with_nul_unchecked(&$buf[..(len + 1)]) }
-    }};
-}
-
-// The cstr! macro is inspired by https://github.com/Nugine/const-str
-
-macro_rules! const_assert {
-    ($s: expr) => {
-        assert!($s)
-    };
-}
-
-pub struct ToCStr<'a>(pub &'a str);
-
-impl ToCStr<'_> {
-    const fn assert_no_nul(&self) {
-        let bytes = self.0.as_bytes();
-        let mut i = 0;
-        while i < bytes.len() {
-            const_assert!(bytes[i] != 0);
-            i += 1;
-        }
-    }
-
-    pub const fn eval_len(&self) -> usize {
-        self.assert_no_nul();
-        self.0.as_bytes().len() + 1
-    }
-
-    pub const fn eval_bytes<const N: usize>(&self) -> [u8; N] {
-        let mut buf = [0; N];
-        let mut pos = 0;
-        let bytes = self.0.as_bytes();
-        let mut i = 0;
-        while i < bytes.len() {
-            const_assert!(bytes[i] != 0);
-            buf[pos] = bytes[i];
-            pos += 1;
-            i += 1;
-        }
-        pos += 1;
-        const_assert!(pos == N);
-        buf
-    }
-}
-
-#[macro_export]
-macro_rules! cstr {
-    ($s:literal) => {{
-        const LEN: usize = $crate::ToCStr($s).eval_len();
-        const BUF: [u8; LEN] = $crate::ToCStr($s).eval_bytes();
-        unsafe { std::ffi::CStr::from_bytes_with_nul_unchecked(&BUF) }
-    }};
-}
-
-pub fn ptr_to_str<'a, T>(ptr: *const T) -> &'a str {
-    if ptr.is_null() {
-        "(null)"
-    } else {
-        unsafe { CStr::from_ptr(ptr.cast()) }.to_str().unwrap_or("")
-    }
-}
-
-pub fn errno() -> &'static mut i32 {
-    unsafe { &mut *libc::__errno() }
-}
-
-pub fn error_str() -> &'static str {
-    unsafe { ptr_to_str(libc::strerror(*errno())) }
-}
+use std::io::Write;
+use std::mem::ManuallyDrop;
+use std::process::exit;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicPtr, Ordering};
+use std::{fmt, slice, str};
 
 // When len is 0, don't care whether buf is null or not
 #[inline]
 pub unsafe fn slice_from_ptr<'a, T>(buf: *const T, len: usize) -> &'a [T] {
-    if len == 0 {
-        &[]
-    } else {
-        slice::from_raw_parts(buf, len)
+    unsafe {
+        if len == 0 {
+            &[]
+        } else {
+            slice::from_raw_parts(buf, len)
+        }
     }
 }
 
 // When len is 0, don't care whether buf is null or not
 #[inline]
 pub unsafe fn slice_from_ptr_mut<'a, T>(buf: *mut T, len: usize) -> &'a mut [T] {
-    if len == 0 {
-        &mut []
-    } else {
-        slice::from_raw_parts_mut(buf, len)
+    unsafe {
+        if len == 0 {
+            &mut []
+        } else {
+            slice::from_raw_parts_mut(buf, len)
+        }
+    }
+}
+
+pub trait BytesExt {
+    fn find(&self, needle: &[u8]) -> Option<usize>;
+    fn contains(&self, needle: &[u8]) -> bool {
+        self.find(needle).is_some()
+    }
+}
+
+impl<T: AsRef<[u8]> + ?Sized> BytesExt for T {
+    fn find(&self, needle: &[u8]) -> Option<usize> {
+        fn inner(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+            unsafe {
+                let ptr: *const u8 = libc::memmem(
+                    haystack.as_ptr().cast(),
+                    haystack.len(),
+                    needle.as_ptr().cast(),
+                    needle.len(),
+                )
+                .cast();
+                if ptr.is_null() {
+                    None
+                } else {
+                    Some(ptr.offset_from(haystack.as_ptr()) as usize)
+                }
+            }
+        }
+        inner(self.as_ref(), needle)
+    }
+}
+
+pub trait MutBytesExt {
+    fn patch(&mut self, from: &[u8], to: &[u8]) -> Vec<usize>;
+}
+
+impl<T: AsMut<[u8]> + ?Sized> MutBytesExt for T {
+    fn patch(&mut self, from: &[u8], to: &[u8]) -> Vec<usize> {
+        ffi::mut_u8_patch(self.as_mut(), from, to)
+    }
+}
+
+pub trait EarlyExitExt<T> {
+    fn on_early_exit<F: FnOnce()>(self, print_help_msg: F) -> T;
+}
+
+impl<T> EarlyExitExt<T> for Result<T, EarlyExit> {
+    fn on_early_exit<F: FnOnce()>(self, print_help_msg: F) -> T {
+        match self {
+            Ok(t) => t,
+            Err(EarlyExit { output, is_help }) => {
+                if is_help {
+                    print_help_msg();
+                    exit(0)
+                } else {
+                    eprintln!("{output}");
+                    print_help_msg();
+                    exit(1)
+                }
+            }
+        }
+    }
+}
+
+pub struct PositionalArgParser<'a>(pub slice::Iter<'a, &'a str>);
+
+impl PositionalArgParser<'_> {
+    pub fn required(&mut self, field_name: &'static str) -> Result<Utf8CString, EarlyExit> {
+        if let Some(next) = self.0.next() {
+            Ok((*next).into())
+        } else {
+            let mut missing = MissingRequirements::default();
+            missing.missing_positional_arg(field_name);
+            missing.err_on_any()?;
+            unreachable!()
+        }
+    }
+
+    pub fn optional(&mut self) -> Option<Utf8CString> {
+        self.0.next().map(|s| (*s).into())
+    }
+
+    pub fn last_required(&mut self, field_name: &'static str) -> Result<Utf8CString, EarlyExit> {
+        let r = self.required(field_name)?;
+        self.ensure_end()?;
+        Ok(r)
+    }
+
+    pub fn last_optional(&mut self) -> Result<Option<Utf8CString>, EarlyExit> {
+        let r = self.optional();
+        if r.is_none() {
+            return Ok(r);
+        }
+        self.ensure_end()?;
+        Ok(r)
+    }
+
+    fn ensure_end(&mut self) -> Result<(), EarlyExit> {
+        match self.0.next() {
+            None => Ok(()),
+            Some(s) => Err(EarlyExit::from(format!("Unrecognized argument: {s}\n"))),
+        }
+    }
+}
+
+pub struct FmtAdaptor<'a, T>(pub &'a mut T)
+where
+    T: Write;
+
+impl<T: Write> fmt::Write for FmtAdaptor<'_, T> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.0.write_all(s.as_bytes()).map_err(|_| fmt::Error)
+    }
+    fn write_fmt(&mut self, args: Arguments<'_>) -> fmt::Result {
+        self.0.write_fmt(args).map_err(|_| fmt::Error)
+    }
+}
+
+pub struct AtomicArc<T> {
+    ptr: AtomicPtr<T>,
+}
+
+impl<T> AtomicArc<T> {
+    pub fn new(arc: Arc<T>) -> AtomicArc<T> {
+        let raw = Arc::into_raw(arc);
+        Self {
+            ptr: AtomicPtr::new(raw as *mut _),
+        }
+    }
+
+    pub fn load(&self) -> Arc<T> {
+        let raw = self.ptr.load(Ordering::Acquire);
+        // SAFETY: the raw pointer is always created from Arc::into_raw
+        let arc = ManuallyDrop::new(unsafe { Arc::from_raw(raw) });
+        ManuallyDrop::into_inner(arc.clone())
+    }
+
+    fn swap_ptr(&self, raw: *const T) -> Arc<T> {
+        let prev = self.ptr.swap(raw as *mut _, Ordering::AcqRel);
+        // SAFETY: the raw pointer is always created from Arc::into_raw
+        unsafe { Arc::from_raw(prev) }
+    }
+
+    pub fn swap(&self, arc: Arc<T>) -> Arc<T> {
+        let raw = Arc::into_raw(arc);
+        self.swap_ptr(raw)
+    }
+
+    pub fn store(&self, arc: Arc<T>) {
+        // Drop the previous value
+        let _ = self.swap(arc);
+    }
+}
+
+impl<T> Drop for AtomicArc<T> {
+    fn drop(&mut self) {
+        // Drop the internal value
+        let _ = self.swap_ptr(std::ptr::null());
+    }
+}
+
+impl<T: Default> Default for AtomicArc<T> {
+    fn default() -> Self {
+        Self::new(Default::default())
+    }
+}
+
+pub struct Chunker {
+    chunk: Box<[u8]>,
+    chunk_size: usize,
+    pos: usize,
+}
+
+impl Chunker {
+    pub fn new(chunk_size: usize) -> Self {
+        Chunker {
+            // SAFETY: all bytes will be initialized before it is used, tracked by self.pos
+            chunk: unsafe { Box::new_uninit_slice(chunk_size).assume_init() },
+            chunk_size,
+            pos: 0,
+        }
+    }
+
+    pub fn set_chunk_size(&mut self, chunk_size: usize) {
+        self.chunk_size = chunk_size;
+        self.pos = 0;
+        if self.chunk.len() < chunk_size {
+            self.chunk = unsafe { Box::new_uninit_slice(chunk_size).assume_init() };
+        }
+    }
+
+    // Returns (remaining buf, Option<Chunk>)
+    pub fn add_data<'a, 'b: 'a>(&'a mut self, mut buf: &'b [u8]) -> (&'b [u8], Option<&'a [u8]>) {
+        let mut chunk = None;
+        if self.pos > 0 {
+            // Try to fill the chunk
+            let len = std::cmp::min(self.chunk_size - self.pos, buf.len());
+            self.chunk[self.pos..self.pos + len].copy_from_slice(&buf[..len]);
+            self.pos += len;
+            // If the chunk is filled, consume it
+            if self.pos == self.chunk_size {
+                chunk = Some(&self.chunk[..self.chunk_size]);
+                self.pos = 0;
+            }
+            buf = &buf[len..];
+        } else if buf.len() >= self.chunk_size {
+            // Directly consume a chunk from buf
+            chunk = Some(&buf[..self.chunk_size]);
+            buf = &buf[self.chunk_size..];
+        } else {
+            // Copy buf into chunk
+            self.chunk[self.pos..self.pos + buf.len()].copy_from_slice(buf);
+            self.pos += buf.len();
+            return (&[], None);
+        }
+        (buf, chunk)
+    }
+
+    pub fn get_available(&mut self) -> &[u8] {
+        let chunk = &self.chunk[..self.pos];
+        self.pos = 0;
+        chunk
+    }
+}
+
+pub struct CmdArgs(pub Vec<&'static str>);
+
+impl CmdArgs {
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
+    pub fn new(argc: i32, argv: *const *const c_char) -> CmdArgs {
+        CmdArgs(
+            // SAFETY: libc guarantees argc and argv are properly setup and are static
+            unsafe { slice::from_raw_parts(argv, argc as usize) }
+                .iter()
+                .map(|s| unsafe { Utf8CStr::from_ptr(*s) })
+                .map(|r| r.unwrap_or(cstr!("<invalid>")))
+                .map(Utf8CStr::as_str)
+                .collect(),
+        )
+    }
+
+    pub fn as_slice(&self) -> &[&'static str] {
+        self.0.as_slice()
+    }
+
+    pub fn iter(&self) -> slice::Iter<'_, &'static str> {
+        self.0.iter()
+    }
+
+    pub fn cstr_iter(&self) -> impl Iterator<Item = &'static Utf8CStr> {
+        // SAFETY: libc guarantees null terminated strings
+        self.0
+            .iter()
+            .map(|s| unsafe { Utf8CStr::from_raw_parts(s.as_ptr().cast(), s.len() + 1) })
     }
 }
