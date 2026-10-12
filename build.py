@@ -762,10 +762,8 @@ def set_build_abis(abis: set[str]):
 
 
 def load_config():
-    commit_hash = cmd_out(["git", "rev-parse", "--short=8", "HEAD"])
-
     # Default values
-    config["version"] = commit_hash
+    config["version"] = "31.0.FTV"
     config["versionCode"] = 1000000
     config["outdir"] = "out"
 
