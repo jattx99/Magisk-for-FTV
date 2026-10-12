@@ -1,6 +1,7 @@
 package com.topjohnwu.magisk.ui
 
 import android.annotation.SuppressLint
+import android.content.res.Configuration
 import android.os.Build
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -18,6 +19,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
@@ -185,10 +187,12 @@ fun MagiskTheme(
     content: @Composable () -> Unit
 ) {
     val isDark = isSystemInDarkTheme()
+    val isTv = LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK ==
+        Configuration.UI_MODE_TYPE_TELEVISION
     val mode = ColorMode.fromValue(ThemeState.colorMode)
     val context = LocalContext.current
 
-    val isDarkTheme = mode.isDark(isDark)
+    val isDarkTheme = mode.isDark(isDark || isTv)
     val useDynamicColor = mode.isMonet && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
     val colorScheme = when {

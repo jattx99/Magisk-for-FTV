@@ -1,5 +1,6 @@
 package com.topjohnwu.magisk.ui.module
 
+import android.content.res.Configuration
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,6 +21,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items as columnItems
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.items
@@ -46,6 +50,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -61,8 +66,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
+import androidx.window.core.layout.WindowSizeClass
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -218,39 +225,72 @@ fun ModuleScreen(
             return@Scaffold
         }
 
-        val gridState = rememberLazyStaggeredGridState()
-        // Staggered, as cards expand; 360dp leaves room for the action buttons row
-        LazyVerticalStaggeredGrid(
-            columns = StaggeredGridCells.Adaptive(360.dp),
-            state = gridState,
-            modifier = Modifier
-                .fillMaxSize()
-                .nestedScroll(scrollBehavior.nestedScrollConnection)
-                .padding(padding)
-                .verticalScrollbar(gridState, contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)),
-            contentPadding = PaddingValues(start = 12.dp, top = 16.dp, end = 12.dp, bottom = 92.dp),
-            verticalItemSpacing = 8.dp,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(
-                items = uiState.modules,
-                key = { it.module.id },
-                contentType = { "ModuleCard" }
-            ) { item ->
-                val isLast = item == uiState.modules.lastOrNull()
-                ModuleCard(
-                    item = item,
-                    viewModel = viewModel,
-                    modifier = if (isLast && contentFocusRequester != null) {
-                        Modifier.focusRequester(contentFocusRequester)
-                    } else Modifier,
-                    onUpdateClick = { onlineModule ->
-                        if (onlineModule != null && Info.isConnected.value == true) {
-                            pendingOnlineModule = onlineModule
-                            showOnlineDialog = true
+        val isTv = LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK ==
+            Configuration.UI_MODE_TYPE_TELEVISION
+        val isCompactWidth = !currentWindowAdaptiveInfo().windowSizeClass
+            .isWidthAtLeastBreakpoint(WindowSizeClass.WIDTH_DP_MEDIUM_LOWER_BOUND)
+        if (isTv || isCompactWidth) {
+            val listState = rememberLazyListState()
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .nestedScroll(scrollBehavior.nestedScrollConnection)
+                    .padding(padding)
+                    .verticalScrollbar(listState, contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)),
+                contentPadding = PaddingValues(start = 12.dp, top = 16.dp, end = 12.dp, bottom = 92.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                columnItems(uiState.modules, key = { it.module.id }) { item ->
+                    ModuleCard(
+                        item = item,
+                        viewModel = viewModel,
+                        modifier = if (item == uiState.modules.lastOrNull() && contentFocusRequester != null) {
+                            Modifier.focusRequester(contentFocusRequester)
+                        } else Modifier,
+                        onUpdateClick = { onlineModule ->
+                            if (onlineModule != null && Info.isConnected.value == true) {
+                                pendingOnlineModule = onlineModule
+                                showOnlineDialog = true
+                            }
                         }
-                    }
-                )
+                    )
+                }
+            }
+        } else {
+            val gridState = rememberLazyStaggeredGridState()
+            // Staggered, as cards expand; 360dp leaves room for the action buttons row
+            LazyVerticalStaggeredGrid(
+                columns = StaggeredGridCells.Adaptive(360.dp),
+                state = gridState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .nestedScroll(scrollBehavior.nestedScrollConnection)
+                    .padding(padding)
+                    .verticalScrollbar(gridState, contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)),
+                contentPadding = PaddingValues(start = 12.dp, top = 16.dp, end = 12.dp, bottom = 92.dp),
+                verticalItemSpacing = 8.dp,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(
+                    items = uiState.modules,
+                    key = { it.module.id },
+                    contentType = { "ModuleCard" }
+                ) { item ->
+                    ModuleCard(
+                        item = item,
+                        viewModel = viewModel,
+                        modifier = if (item == uiState.modules.lastOrNull() && contentFocusRequester != null) {
+                            Modifier.focusRequester(contentFocusRequester)
+                        } else Modifier,
+                        onUpdateClick = { onlineModule ->
+                            if (onlineModule != null && Info.isConnected.value == true) {
+                                pendingOnlineModule = onlineModule
+                                showOnlineDialog = true
+                            }
+                        }
+                    )
+                }
             }
         }
     }

@@ -1,5 +1,6 @@
 package com.topjohnwu.magisk.ui.superuser
 
+import android.content.res.Configuration
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -7,6 +8,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items as columnItems
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -23,6 +27,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -32,10 +37,12 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.window.core.layout.WindowSizeClass
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.topjohnwu.magisk.ui.component.verticalScrollbar
 import com.topjohnwu.magisk.ui.navigation.LocalNavigator
@@ -127,33 +134,61 @@ fun SuperuserScreen(
             return@Scaffold
         }
 
-        val gridState = rememberLazyGridState()
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(320.dp),
-            state = gridState,
-            modifier = Modifier
-                .fillMaxSize()
-                .nestedScroll(scrollBehavior.nestedScrollConnection)
-                .padding(padding)
-                .verticalScrollbar(gridState, contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)),
-            contentPadding = PaddingValues(start = 12.dp, top = 16.dp, end = 12.dp, bottom = 92.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(
-                items = uiState.policies,
-                key = { "${it.policy.uid}_${it.packageName}" },
-                contentType = { "PolicyCard" }
-            ) { item ->
-                val isLast = item == uiState.policies.lastOrNull()
-                PolicyCard(
-                    item = item,
-                    onToggle = { viewModel.togglePolicy(item) },
-                    onDetail = { navigator.push(Route.SuperuserDetail(item.policy.uid)) },
-                    modifier = if (isLast && contentFocusRequester != null) {
-                        Modifier.focusRequester(contentFocusRequester)
-                    } else Modifier,
-                )
+        val isTv = LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK ==
+            Configuration.UI_MODE_TYPE_TELEVISION
+        val isCompactWidth = !currentWindowAdaptiveInfo().windowSizeClass
+            .isWidthAtLeastBreakpoint(WindowSizeClass.WIDTH_DP_MEDIUM_LOWER_BOUND)
+        if (isTv || isCompactWidth) {
+            val listState = rememberLazyListState()
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .nestedScroll(scrollBehavior.nestedScrollConnection)
+                    .padding(padding)
+                    .verticalScrollbar(listState, contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)),
+                contentPadding = PaddingValues(start = 12.dp, top = 16.dp, end = 12.dp, bottom = 92.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                columnItems(uiState.policies, key = { "${it.policy.uid}_${it.packageName}" }) { item ->
+                    PolicyCard(
+                        item = item,
+                        onToggle = { viewModel.togglePolicy(item) },
+                        onDetail = { navigator.push(Route.SuperuserDetail(item.policy.uid)) },
+                        modifier = if (item == uiState.policies.lastOrNull() && contentFocusRequester != null) {
+                            Modifier.focusRequester(contentFocusRequester)
+                        } else Modifier,
+                    )
+                }
+            }
+        } else {
+            val gridState = rememberLazyGridState()
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(320.dp),
+                state = gridState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .nestedScroll(scrollBehavior.nestedScrollConnection)
+                    .padding(padding)
+                    .verticalScrollbar(gridState, contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)),
+                contentPadding = PaddingValues(start = 12.dp, top = 16.dp, end = 12.dp, bottom = 92.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(
+                    items = uiState.policies,
+                    key = { "${it.policy.uid}_${it.packageName}" },
+                    contentType = { "PolicyCard" }
+                ) { item ->
+                    PolicyCard(
+                        item = item,
+                        onToggle = { viewModel.togglePolicy(item) },
+                        onDetail = { navigator.push(Route.SuperuserDetail(item.policy.uid)) },
+                        modifier = if (item == uiState.policies.lastOrNull() && contentFocusRequester != null) {
+                            Modifier.focusRequester(contentFocusRequester)
+                        } else Modifier,
+                    )
+                }
             }
         }
     }
