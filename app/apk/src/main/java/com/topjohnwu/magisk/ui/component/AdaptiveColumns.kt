@@ -24,12 +24,14 @@ fun AdaptiveColumns(
     modifier: Modifier = Modifier,
     spacing: Dp = 12.dp,
     first: @Composable ColumnScope.() -> Unit,
-    second: @Composable ColumnScope.() -> Unit,
+    second: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val twoColumns = currentWindowAdaptiveInfo().windowSizeClass
         .isWidthAtLeastBreakpoint(WindowSizeClass.WIDTH_DP_EXPANDED_LOWER_BOUND)
     val arrangement = Arrangement.spacedBy(spacing)
-    if (twoColumns) {
+    if (second == null) {
+        Column(modifier, verticalArrangement = arrangement, content = first)
+    } else if (twoColumns) {
         Row(
             modifier = modifier
                 .fillMaxWidth()
