@@ -1,0 +1,8 @@
+{
+  "magisk": {
+    "version": "31.0.FTV",
+    "versionCode": 31004,
+    "link": "https://github.com/jattx99/Magisk-for-FTV/releases/download/v31.0.FTV-31004/Magisk-31.0.FTV-31004.apk",
+    "note": "https://raw.githubusercontent.com/jattx99/Magisk-for-FTV/master/update-notes.md"
+  }
+}
