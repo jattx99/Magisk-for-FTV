@@ -1,6 +1,7 @@
 use super::db::RootSettings;
 use crate::daemon::{AID_APP_START, AID_ROOT, MagiskD, to_app_id, to_user_id};
-use crate::db::{DbSettings, MultiuserMode};
+use crate::db::DbArg::Integer;
+use crate::db::{DbSettings, MultiuserMode, SqliteReturn};
 use crate::ffi::{SuPolicy, SuRequest, exec_root_shell};
 use crate::socket::IpcRead;
 use base::{LoggedResult, ResultExt, WriteExt, debug, error, exit_on_error, libc, warn};
@@ -205,6 +206,28 @@ impl MagiskD {
             // If it's the manager, allow it silently
             if to_app_id(uid) == to_app_id(mgr_uid) {
                 return Ok(Arc::new(SuInfo::allow(uid)));
+            }
+
+            if cfg.su_auto_allow
+                && (!settings.has_policy || settings.policy.repr == SuPolicy::Query.repr)
+            {
+                let policy = if cfg.su_restrict {
+                    SuPolicy::Restrict
+                } else {
+                    SuPolicy::Allow
+                };
+                settings.policy = policy;
+                settings.log = true;
+                settings.notify = true;
+                settings.has_policy = true;
+                self.db_exec(
+                    "INSERT OR REPLACE INTO policies \
+                     (uid, policy, until, logging, notification) VALUES(?, ?, 0, 1, 1)",
+                    &[Integer(eval_uid as i64), Integer(policy.repr as i64)],
+                )
+                .sql_result()
+                .log()
+                .ok();
             }
 
             // Finally, the SuInfo

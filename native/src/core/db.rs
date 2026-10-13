@@ -62,6 +62,8 @@ pub struct DbSettings {
     pub boot_count: i32,
     pub denylist: bool,
     pub zygisk: bool,
+    pub su_auto_allow: bool,
+    pub su_restrict: bool,
 }
 
 #[repr(i32)]
@@ -111,6 +113,8 @@ impl SqlTable for DbSettings {
             "mnt_ns" => self.mnt_ns = MntNsMode { repr: value },
             "denylist" => self.denylist = value != 0,
             "zygisk" => self.zygisk = value != 0,
+            "su_auto_allow" => self.su_auto_allow = value != 0,
+            "su_restrict" => self.su_restrict = value != 0,
             "bootloop" => self.boot_count = value,
             _ => {}
         }

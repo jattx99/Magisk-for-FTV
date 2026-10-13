@@ -429,6 +429,25 @@ private fun SuperuserSection(
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
         )
 
+        // Auto-allow new Superuser requests
+        var autoAllow by remember { mutableStateOf(Config.suAutoAllow) }
+        SettingsSwitch(
+            title = stringResource(CoreR.string.settings_su_auto_allow_title),
+            summary = stringResource(CoreR.string.settings_su_auto_allow_summary),
+            checked = autoAllow,
+            onCheckedChange = { newValue ->
+                viewModel.withAuth {
+                    autoAllow = newValue
+                    Config.suAutoAllow = newValue
+                }
+            }
+        )
+
+        HorizontalDivider(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+        )
+
 
         if (!Info.isHeadlessSystemUser) {
             // Multiuser Mode

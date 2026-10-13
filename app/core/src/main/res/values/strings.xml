@@ -163,6 +163,8 @@
     <string name="settings_su_auth_title">User authentication</string>
     <string name="settings_su_auth_summary">Ask for user authentication during Superuser requests</string>
     <string name="settings_su_auth_insecure">No authentication method is configured on the device</string>
+    <string name="settings_su_auto_allow_title">Automatically allow Superuser requests</string>
+    <string name="settings_su_auto_allow_summary">Grant root automatically to requesters without a saved decision. Existing denials stay; new grants remain until revoked in the Superuser tab.</string>
     <string name="settings_su_restrict_title">Restrict root capabilities</string>
     <string name="settings_su_restrict_summary">Will restrict new Superuser apps by default. Warning: this will break most apps. Don\'t enable it unless you know what you\'re doing.</string>
     <string name="settings_customization">Customization</string>

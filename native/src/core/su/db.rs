@@ -1,6 +1,4 @@
-use crate::daemon::{
-    AID_APP_END, AID_APP_START, AID_ROOT, MagiskD, to_app_id, to_user_id,
-};
+use crate::daemon::{AID_APP_END, AID_APP_START, AID_ROOT, MagiskD, to_app_id, to_user_id};
 use crate::db::DbArg::Integer;
 use crate::db::{MultiuserMode, SqlTable, SqliteResult, SqliteReturn};
 use crate::ffi::{DbValues, SuPolicy};
@@ -17,10 +15,12 @@ pub struct RootSettings {
     pub policy: SuPolicy,
     pub log: bool,
     pub notify: bool,
+    pub has_policy: bool,
 }
 
 impl SqlTable for RootSettings {
     fn on_row(&mut self, columns: &[String], values: &DbValues) {
+        self.has_policy = true;
         for (i, column) in columns.iter().enumerate() {
             let val = values.get_int(i as i32);
             match column.as_str() {

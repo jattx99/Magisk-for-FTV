@@ -21,6 +21,7 @@ object Config : PreferenceConfig, DBConfig {
         // db configs
         const val SU_MULTIUSER_MODE = "multiuser_mode"
         const val SU_MNT_NS = "mnt_ns"
+        const val SU_AUTO_ALLOW = "su_auto_allow"
         const val SU_BIOMETRIC = "su_biometric"
         const val ZYGISK = "zygisk"
         const val BOOTLOOP = "bootloop"
@@ -126,13 +127,21 @@ object Config : PreferenceConfig, DBConfig {
     var suNotification by preferenceStrInt(Key.SU_NOTIFICATION, Value.NOTIFICATION_TOAST)
     var suMntNamespaceMode by dbSettings(Key.SU_MNT_NS, Value.NAMESPACE_MODE_REQUESTER)
     var suMultiuserMode by dbSettings(Key.SU_MULTIUSER_MODE, Value.MULTIUSER_MODE_OWNER_ONLY)
+    var suAutoAllow by dbSettings(Key.SU_AUTO_ALLOW, false)
     private var suBiometric by dbSettings(Key.SU_BIOMETRIC, false)
     var suAuth
         get() = Info.isDeviceSecure && suBiometric
         set(value) {
             suBiometric = value
         }
-    var suRestrict by preference(Key.SU_RESTRICT, false)
+    private var suRestrictPref by preference(Key.SU_RESTRICT, false)
+    private var suRestrictDb by dbSettings(Key.SU_RESTRICT, false)
+    var suRestrict
+        get() = suRestrictPref
+        set(value) {
+            suRestrictPref = value
+            suRestrictDb = value
+        }
 
     private const val SU_FINGERPRINT = "su_fingerprint"
     private const val UPDATE_CHANNEL = "update_channel"
@@ -189,5 +198,8 @@ object Config : PreferenceConfig, DBConfig {
             }
             remove(UPDATE_CHANNEL)
         }
+
+        // Keep the native daemon's default for new Superuser grants in sync.
+        suRestrictDb = suRestrictPref
     }
 }
