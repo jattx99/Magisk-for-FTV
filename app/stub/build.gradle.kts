@@ -13,8 +13,9 @@ android {
     namespace = "com.topjohnwu.magisk"
     enableKotlin = false
 
-    val base = "https://github.com/topjohnwu/Magisk/releases/download/"
-    val url = base + "v${Config.version}/Magisk-v${Config.version}.apk"
+    val base = "https://github.com/jattx99/Magisk-for-FTV/releases/download/"
+    val tag = "v${Config.version}-${Config.versionCode}"
+    val url = base + "$tag/Magisk-${Config.version}-${Config.versionCode}.apk"
 
     defaultConfig {
         applicationId = "com.topjohnwu.magisk"
