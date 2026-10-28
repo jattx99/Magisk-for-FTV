@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -34,12 +34,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -56,7 +56,6 @@ import com.topjohnwu.magisk.core.di.ServiceLocator
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.onEach
@@ -64,7 +63,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import timber.log.Timber
-import java.io.IOException
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.resume
 
 sealed interface ConfirmResult {
@@ -80,8 +79,40 @@ data class DialogVisuals(
     val dismiss: String? = null,
 )
 
-interface LoadingDialogHandle {
-    suspend fun <R> withLoading(block: suspend () -> R): R
+private class ConfirmDialogState(
+    visible: Boolean = false,
+    visuals: DialogVisuals = DialogVisuals(),
+) {
+    var visible by mutableStateOf(visible)
+    var visuals by mutableStateOf(visuals)
+    // Whether the dialog was shown by awaitConfirm
+    var awaiting = false
+
+    companion object {
+        /**
+         * Restores the dialog with its content after a configuration change. A dialog shown by
+         * awaitConfirm is not restored: the coroutine waiting for its result does not survive,
+         * so confirming it would do nothing. Callers that need it show it again.
+         */
+        val Saver = listSaver<ConfirmDialogState, Any?>(
+            save = {
+                val v = it.visuals
+                listOf(it.visible && !it.awaiting, v.title, v.content, v.markdown, v.confirm, v.dismiss)
+            },
+            restore = {
+                ConfirmDialogState(
+                    visible = it[0] as Boolean,
+                    visuals = DialogVisuals(
+                        title = it[1] as String,
+                        content = it[2] as String?,
+                        markdown = it[3] as Boolean,
+                        confirm = it[4] as String?,
+                        dismiss = it[5] as String?,
+                    ),
+                )
+            }
+        )
+    }
 }
 
 interface ConfirmDialogHandle {
@@ -102,31 +133,12 @@ interface ConfirmDialogHandle {
     ): ConfirmResult
 }
 
-private class LoadingDialogHandleImpl(
-    private val visible: MutableState<Boolean>,
-    private val coroutineScope: CoroutineScope
-) : LoadingDialogHandle {
-    override suspend fun <R> withLoading(block: suspend () -> R): R {
-        return coroutineScope.async {
-            try {
-                visible.value = true
-                block()
-            } finally {
-                visible.value = false
-            }
-        }.await()
-    }
-}
-
 private class ConfirmDialogHandleImpl(
-    private val visible: MutableState<Boolean>,
+    private val state: ConfirmDialogState,
     private val coroutineScope: CoroutineScope,
     private val callback: ConfirmCallback,
     private val resultChannel: Channel<ConfirmResult>
 ) : ConfirmDialogHandle {
-
-    var visuals by mutableStateOf(DialogVisuals())
-        private set
 
     private var awaitContinuation: CancellableContinuation<ConfirmResult>? = null
 
@@ -140,7 +152,7 @@ private class ConfirmDialogHandleImpl(
                         if (it.isActive) it.resume(result)
                     }
                 }
-                .onEach { visible.value = false }
+                .onEach { state.visible = false }
                 .collect { result ->
                     when (result) {
                         ConfirmResult.Confirmed -> callback.onConfirm?.invoke()
@@ -158,8 +170,9 @@ private class ConfirmDialogHandleImpl(
         dismiss: String?
     ) {
         coroutineScope.launch {
-            visuals = DialogVisuals(title, content, markdown, confirm, dismiss)
-            visible.value = true
+            state.visuals = DialogVisuals(title, content, markdown, confirm, dismiss)
+            state.awaiting = false
+            state.visible = true
         }
     }
 
@@ -171,12 +184,13 @@ private class ConfirmDialogHandleImpl(
         dismiss: String?
     ): ConfirmResult {
         coroutineScope.launch {
-            visuals = DialogVisuals(title, content, markdown, confirm, dismiss)
-            visible.value = true
+            state.visuals = DialogVisuals(title, content, markdown, confirm, dismiss)
+            state.awaiting = true
+            state.visible = true
         }
         return suspendCancellableCoroutine { cont ->
             awaitContinuation = cont.apply {
-                invokeOnCancellation { visible.value = false }
+                invokeOnCancellation { state.visible = false }
             }
         }
     }
@@ -203,14 +217,6 @@ fun rememberConfirmCallback(
 }
 
 @Composable
-fun rememberLoadingDialog(): LoadingDialogHandle {
-    val visible = remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-    LoadingDialog(visible = visible.value)
-    return remember { LoadingDialogHandleImpl(visible, scope) }
-}
-
-@Composable
 fun rememberConfirmDialog(
     onConfirm: (() -> Unit)? = null,
     onDismiss: (() -> Unit)? = null
@@ -220,23 +226,23 @@ fun rememberConfirmDialog(
 
 @Composable
 fun rememberConfirmDialog(callback: ConfirmCallback): ConfirmDialogHandle {
-    val visible = rememberSaveable { mutableStateOf(false) }
+    val state = rememberSaveable(saver = ConfirmDialogState.Saver) { ConfirmDialogState() }
     val scope = rememberCoroutineScope()
     val resultChannel = remember { Channel<ConfirmResult>() }
 
     val handle = remember {
-        ConfirmDialogHandleImpl(visible, scope, callback, resultChannel)
+        ConfirmDialogHandleImpl(state, scope, callback, resultChannel)
     }
 
-    if (visible.value) {
+    if (state.visible) {
         ConfirmDialogContent(
-            visuals = handle.visuals,
+            visuals = state.visuals,
             confirm = {
-                visible.value = false
+                state.visible = false
                 scope.launch { resultChannel.send(ConfirmResult.Confirmed) }
             },
             dismiss = {
-                visible.value = false
+                state.visible = false
                 scope.launch { resultChannel.send(ConfirmResult.Canceled) }
             }
         )
@@ -303,7 +309,8 @@ fun MagiskDialog(
         properties = DialogProperties(
             dismissOnClickOutside = dismissOnClickOutside,
             dismissOnBackPress = dismissOnBackPress,
-            usePlatformDefaultWidth = false
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
         )
     ) {
         Surface(
@@ -311,7 +318,7 @@ fun MagiskDialog(
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             tonalElevation = 6.dp,
             modifier = modifier
-                .windowInsetsPadding(WindowInsets.systemBars)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
                 .padding(horizontal = 24.dp, vertical = 24.dp)
                 .widthIn(min = 280.dp, max = 560.dp)
         ) {
@@ -389,8 +396,8 @@ fun MagiskDialog(
 @Composable
 fun MagiskDialog(
     onDismissRequest: () -> Unit,
-    title: String? = null,
     modifier: Modifier = Modifier,
+    title: String? = null,
     dismissOnClickOutside: Boolean = true,
     dismissOnBackPress: Boolean = true,
     confirmText: String? = null,
@@ -605,7 +612,10 @@ fun MarkdownTextAsync(
     LaunchedEffect(Unit) {
         try {
             mdText = withContext(Dispatchers.IO) { getMarkdownText() }
-        } catch (e: IOException) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // The text can come from a URL provided by a module, which can be malformed
             Timber.e(e)
             error = true
         }

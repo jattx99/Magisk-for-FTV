@@ -1,10 +1,9 @@
 package com.topjohnwu.magisk.ui.superuser
 
-import android.annotation.SuppressLint
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager.MATCH_UNINSTALLED_PACKAGES
-import android.graphics.drawable.Drawable
-import androidx.core.os.ProcessCompat
+import android.os.Process
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.viewModelScope
 import com.topjohnwu.magisk.arch.AsyncLoadViewModel
 import com.topjohnwu.magisk.core.AppContext
@@ -15,6 +14,7 @@ import com.topjohnwu.magisk.core.ktx.concurrentMap
 import com.topjohnwu.magisk.core.ktx.getLabel
 import com.topjohnwu.magisk.core.model.su.SuPolicy
 import com.topjohnwu.magisk.core.su.SuEvents
+import com.topjohnwu.magisk.ui.component.AppSortBy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,16 +28,16 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.toCollection
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.util.Locale
 
-enum class SortBy { NAME, PACKAGE_NAME, INSTALL_TIME, UPDATE_TIME }
-
+@Immutable
 data class SuGrantAppInfo(
     val label: String,
     val packageName: String,
-    val icon: Drawable,
     val uid: Int,
     val isSystemApp: Boolean,
     val isApp: Boolean,
@@ -54,6 +54,7 @@ data class SuGrantAppInfo(
     }
 }
 
+@Immutable
 data class SuGrantAppState(
     val info: SuGrantAppInfo,
     val isGranted: Boolean,
@@ -63,6 +64,8 @@ data class SuGrantAppState(
 class SuperuserGrantViewModel(
     private val policyDB: PolicyDao
 ) : AsyncLoadViewModel() {
+
+    private val writeLock = Mutex()
 
     private val _loading = MutableStateFlow(true)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
@@ -78,13 +81,11 @@ class SuperuserGrantViewModel(
     private val _showOS = MutableStateFlow(false)
     val showOS: StateFlow<Boolean> = _showOS.asStateFlow()
 
-    private val _sortBy = MutableStateFlow(SortBy.NAME)
-    val sortBy: StateFlow<SortBy> = _sortBy.asStateFlow()
+    private val _sortBy = MutableStateFlow(AppSortBy.NAME)
+    val sortBy: StateFlow<AppSortBy> = _sortBy.asStateFlow()
 
     private val _sortReverse = MutableStateFlow(false)
     val sortReverse: StateFlow<Boolean> = _sortReverse.asStateFlow()
-
-    var authenticate: (onSuccess: () -> Unit) -> Unit = { it() }
 
     val filteredApps: StateFlow<List<SuGrantAppState>> = combine(
         _allApps, _query, _showSystem, _showOS, _sortBy, _sortReverse
@@ -94,7 +95,7 @@ class SuperuserGrantViewModel(
         val q = args[1] as String
         val showSys = args[2] as Boolean
         val showOS = args[3] as Boolean
-        val sort = args[4] as SortBy
+        val sort = args[4] as AppSortBy
         val reverse = args[5] as Boolean
 
         val filtered = apps.filter { app ->
@@ -111,13 +112,13 @@ class SuperuserGrantViewModel(
         }
 
         val secondary: Comparator<SuGrantAppState> = when (sort) {
-            SortBy.NAME -> compareBy<SuGrantAppState, String>(String.CASE_INSENSITIVE_ORDER) { it.info.label }
+            AppSortBy.NAME -> compareBy<SuGrantAppState, String>(String.CASE_INSENSITIVE_ORDER) { it.info.label }
                 .thenBy { it.info.packageName }
-            SortBy.PACKAGE_NAME -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.info.packageName }
-            SortBy.INSTALL_TIME -> compareByDescending<SuGrantAppState> { it.info.firstInstallTime }
+            AppSortBy.PACKAGE_NAME -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.info.packageName }
+            AppSortBy.INSTALL_TIME -> compareByDescending<SuGrantAppState> { it.info.firstInstallTime }
                 .thenBy(String.CASE_INSENSITIVE_ORDER) { it.info.label }
                 .thenBy { it.info.packageName }
-            SortBy.UPDATE_TIME -> compareByDescending<SuGrantAppState> { it.info.lastUpdateTime }
+            AppSortBy.UPDATE_TIME -> compareByDescending<SuGrantAppState> { it.info.lastUpdateTime }
                 .thenBy(String.CASE_INSENSITIVE_ORDER) { it.info.label }
                 .thenBy { it.info.packageName }
         }
@@ -132,61 +133,59 @@ class SuperuserGrantViewModel(
         if (!v) _showOS.value = false
     }
     fun setShowOS(v: Boolean) { _showOS.value = v }
-    fun setSortBy(s: SortBy) { _sortBy.value = s }
+    fun setSortBy(s: AppSortBy) { _sortBy.value = s }
     fun toggleSortReverse() { _sortReverse.value = !_sortReverse.value }
 
     fun toggleGrant(app: SuGrantAppState) {
-        val willGrant = !app.isGranted
-        fun updateState() {
-            _allApps.update { apps ->
-                apps.map { current ->
-                    if (current.info.uid == app.info.uid) {
-                        current.copy(isGranted = willGrant)
-                    } else {
-                        current
-                    }
+        // Toggle the current state rather than the one the UI captured: two quick taps can
+        // deliver the same item before it recomposes
+        val uid = app.info.uid
+        val target = _allApps.value.firstOrNull { it.info.uid == uid } ?: return
+        val willGrant = !target.isGranted
+        _allApps.update { apps ->
+            apps.map { current ->
+                if (current.info.uid == uid) {
+                    current.copy(isGranted = willGrant)
+                } else {
+                    current
                 }
-            }
-            viewModelScope.launch {
-                try {
-                    withContext(Dispatchers.IO) {
-                        if (willGrant) {
-                            val existing = policyDB.fetch(app.info.uid)
-                            val suPolicy = existing ?: SuPolicy(app.info.uid)
-                            suPolicy.policy = if (Config.suRestrict) SuPolicy.RESTRICT else SuPolicy.ALLOW
-                            suPolicy.remain = 0L
-                            policyDB.update(suPolicy)
-                        } else {
-                            policyDB.delete(app.info.uid)
-                        }
-                    }
-                } catch (e: Exception) {
-                    if (e is CancellationException) throw e
-                    Timber.e(e)
-                    _allApps.update { apps ->
-                        apps.map { current ->
-                            if (current.info.uid == app.info.uid && current.isGranted == willGrant) {
-                                current.copy(isGranted = !willGrant)
-                            } else {
-                                current
-                            }
-                        }
-                    }
-                    return@launch
-                }
-
-                SuEvents.notifyPolicyChanged()
             }
         }
+        viewModelScope.launch {
+            try {
+                // Write in tap order: a grant takes two queries and a revoke one, so unordered
+                // writes could leave an app granted while it is shown as not granted
+                writeLock.withLock {
+                    withContext(Dispatchers.IO) {
+                        if (willGrant) {
+                            val existing = policyDB.fetch(uid)
+                            val suPolicy = existing ?: SuPolicy(uid)
+                            suPolicy.policy = if (Config.suRestrict) SuPolicy.RESTRICT else SuPolicy.ALLOW
+                            policyDB.update(suPolicy)
+                        } else {
+                            policyDB.delete(uid)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Timber.e(e)
+                _allApps.update { apps ->
+                    apps.map { current ->
+                        if (current.info.uid == uid && current.isGranted == willGrant) {
+                            current.copy(isGranted = !willGrant)
+                        } else {
+                            current
+                        }
+                    }
+                }
+                return@launch
+            }
 
-        if (Config.suAuth) {
-            authenticate { updateState() }
-        } else {
-            updateState()
+            SuEvents.notifyPolicyChanged()
         }
     }
 
-    @SuppressLint("InlinedApi")
     override suspend fun doLoadWork() {
         if (_allApps.value.isNotEmpty()) return
         _loading.value = true
@@ -232,13 +231,11 @@ class SuperuserGrantViewModel(
                     }
                     val isSharedUid = pkg?.sharedUserId != null
                     val label = appInfo.getLabel(pm)
-                    val icon = runCatching { appInfo.loadIcon(pm) }.getOrDefault(pm.defaultActivityIcon)
                     val isSystemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                    val isApp = ProcessCompat.isApplicationUid(appInfo.uid)
+                    val isApp = Process.isApplicationUid(appInfo.uid)
                     val suAppInfo = SuGrantAppInfo(
                         label = label,
                         packageName = appInfo.packageName,
-                        icon = icon,
                         uid = appInfo.uid,
                         isSystemApp = isSystemApp,
                         isApp = isApp,

@@ -58,6 +58,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.navigationevent.NavigationEventInfo
+import androidx.navigationevent.compose.NavigationBackHandler
+import androidx.navigationevent.compose.rememberNavigationEventState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,7 +72,8 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.google.accompanist.drawablepainter.rememberDrawablePainter
+import com.topjohnwu.magisk.ui.component.AppIcon
+import com.topjohnwu.magisk.ui.component.AppSortFilterActions
 import com.topjohnwu.magisk.ui.component.verticalScrollbar
 import com.topjohnwu.magisk.core.R as CoreR
 
@@ -88,8 +92,14 @@ fun DenyListScreen(
     val sortBy by viewModel.sortBy.collectAsStateWithLifecycle()
     val sortReverse by viewModel.sortReverse.collectAsStateWithLifecycle()
 
-    var showSortMenu by remember { mutableStateOf(false) }
-    var showFilterMenu by remember { mutableStateOf(false) }
+    val searchBackState = rememberNavigationEventState(currentInfo = NavigationEventInfo.None)
+    NavigationBackHandler(
+        state = searchBackState,
+        isBackEnabled = query.isNotEmpty(),
+        onBackCompleted = {
+            viewModel.setQuery("")
+        }
+    )
 
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     Scaffold(
@@ -99,98 +109,31 @@ fun DenyListScreen(
                 title = { Text(stringResource(CoreR.string.denylist)) },
                 navigationIcon = {
                     IconButton(
-                        onClick = onBack
+                        onClick = {
+                            if (query.isNotEmpty()) {
+                                viewModel.setQuery("")
+                            } else {
+                                onBack()
+                            }
+                        }
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = null,
+                            contentDescription = stringResource(CoreR.string.back),
                         )
                     }
                 },
                 actions = {
-                    Box {
-                        IconButton(
-                            onClick = { showSortMenu = true },
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Sort,
-                                contentDescription = stringResource(CoreR.string.menu_sort),
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = showSortMenu,
-                            onDismissRequest = { showSortMenu = false }
-                        ) {
-                            val sortOptions = listOf(
-                                CoreR.string.sort_by_name to SortBy.NAME,
-                                CoreR.string.sort_by_package_name to SortBy.PACKAGE_NAME,
-                                CoreR.string.sort_by_install_time to SortBy.INSTALL_TIME,
-                                CoreR.string.sort_by_update_time to SortBy.UPDATE_TIME,
-                            )
-                            sortOptions.forEach { (resId, sort) ->
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(resId)) },
-                                    trailingIcon = if (sortBy == sort) {
-                                        { Icon(Icons.Default.Check, contentDescription = null) }
-                                    } else null,
-                                    onClick = {
-                                        viewModel.setSortBy(sort)
-                                        showSortMenu = false
-                                    }
-                                )
-                            }
-                            DropdownMenuItem(
-                                text = { Text(stringResource(CoreR.string.sort_reverse)) },
-                                trailingIcon = if (sortReverse) {
-                                    { Icon(Icons.Default.Check, contentDescription = null) }
-                                } else null,
-                                onClick = {
-                                    viewModel.toggleSortReverse()
-                                    showSortMenu = false
-                                }
-                            )
-                        }
-                    }
-
-                    Box {
-                        IconButton(
-                            onClick = { showFilterMenu = true },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Tune,
-                                contentDescription = stringResource(CoreR.string.hide_filter_hint),
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = showFilterMenu,
-                            onDismissRequest = { showFilterMenu = false },
-                            offset = DpOffset(x = (-8).dp, y = 0.dp),
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(CoreR.string.show_system_app)) },
-                                trailingIcon = if (showSystem) {
-                                    { Icon(Icons.Default.Check, contentDescription = null) }
-                                } else null,
-                                onClick = {
-                                    viewModel.setShowSystem(!showSystem)
-                                    showFilterMenu = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(CoreR.string.show_os_app)) },
-                                trailingIcon = if (showOS) {
-                                    { Icon(Icons.Default.Check, contentDescription = null) }
-                                } else null,
-                                onClick = {
-                                    if (!showOS && !showSystem) {
-                                        viewModel.setShowSystem(true)
-                                    }
-                                    viewModel.setShowOS(!showOS)
-                                    showFilterMenu = false
-                                }
-                            )
-                        }
-                    }
+                    AppSortFilterActions(
+                        sortBy = sortBy,
+                        sortReverse = sortReverse,
+                        onSortByChanged = { viewModel.setSortBy(it) },
+                        onToggleSortReverse = { viewModel.toggleSortReverse() },
+                        showSystem = showSystem,
+                        showOS = showOS,
+                        onShowSystemChanged = { viewModel.setShowSystem(it) },
+                        onShowOSChanged = { viewModel.setShowOS(it) },
+                    )
                 },
                 scrollBehavior = scrollBehavior
             )
@@ -276,7 +219,7 @@ private fun SearchInput(
                 IconButton(onClick = { onQueryChange("") }) {
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = null,
+                        contentDescription = stringResource(CoreR.string.close),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -329,8 +272,8 @@ private fun DenyAppCard(
                     .padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Image(
-                    painter = rememberDrawablePainter(app.info.iconImage),
+                AppIcon(
+                    packageName = app.info.packageName,
                     contentDescription = app.info.label,
                     modifier = Modifier.size(40.dp)
                 )

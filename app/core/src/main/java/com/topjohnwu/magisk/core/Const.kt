@@ -53,13 +53,11 @@ object Const {
     object Key {
         // intents
         const val OPEN_SECTION = "section"
-        const val PREV_CONFIG = "prev_config"
     }
 
     object Value {
         const val FLASH_ZIP = "flash"
         const val PATCH_FILE = "patch"
-        const val DOWNLOAD = "download"
         const val FLASH_MAGISK = "magisk"
         const val FLASH_INACTIVE_SLOT = "slot"
         const val UNINSTALL = "uninstall"

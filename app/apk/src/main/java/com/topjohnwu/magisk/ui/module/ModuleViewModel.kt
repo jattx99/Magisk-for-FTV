@@ -61,7 +61,7 @@ class OnlineModuleSubject(
     override val autoLaunch: Boolean,
     override val notifyId: Int = Notifications.nextId(),
 ) : Subject.Module() {
-    override fun pendingIntent(context: Context) = FlashUtils.installIntent(context, file)
+    override fun pendingIntent(context: Context) = FlashUtils.installIntent(context, file, notifyId)
 }
 
 class ModuleViewModel : AsyncLoadViewModel() {
@@ -83,12 +83,24 @@ class ModuleViewModel : AsyncLoadViewModel() {
     }
 
     override suspend fun doLoadWork() {
-        _uiState.update { it.copy(loading = true) }
+        // Keep showing the current list while refreshing: loading is only true until the first
+        // load finishes, so a refresh doesn't swap the list for a spinner and lose its scroll
         val moduleLoaded = Info.env.isActive &&
             withContext(Dispatchers.IO) { LocalModule.loaded() }
         if (moduleLoaded) {
+            val previous = _uiState.value.modules.associateBy { it.module.base.name }
             val modules = withContext(Dispatchers.Default) {
-                LocalModule.installed().map { ModuleItem(it) }
+                LocalModule.installed().map { module ->
+                    // Keep the update info of the same module version until it is fetched
+                    // again, so update buttons don't disappear on every refresh
+                    previous[module.base.name]?.module
+                        ?.takeIf { it.versionCode == module.versionCode }
+                        ?.let {
+                            module.updateInfo = it.updateInfo
+                            module.outdated = it.outdated
+                        }
+                    ModuleItem(module)
+                }
             }
             _uiState.update { it.copy(loading = false, modules = modules) }
             loadUpdateInfo()
@@ -117,8 +129,8 @@ class ModuleViewModel : AsyncLoadViewModel() {
         navigateTo(Route.Flash(Const.Value.FLASH_ZIP, uri.toString()))
     }
 
-    fun runAction(id: String, name: String) {
-        navigateTo(Route.Action(id, name))
+    fun runAction(dir: String, name: String) {
+        navigateTo(Route.Action(dir, name))
     }
 
     fun toggleEnabled(item: ModuleItem) {
@@ -127,7 +139,7 @@ class ModuleViewModel : AsyncLoadViewModel() {
         _uiState.update { state ->
             state.copy(
                 modules = state.modules.map {
-                    if (it.module.id == item.module.id) it.copy(isEnabled = newEnabled) else it
+                    if (it.module.base.name == item.module.base.name) it.copy(isEnabled = newEnabled) else it
                 }
             )
         }
@@ -139,7 +151,7 @@ class ModuleViewModel : AsyncLoadViewModel() {
         _uiState.update { state ->
             state.copy(
                 modules = state.modules.map {
-                    if (it.module.id == item.module.id) it.copy(isRemoved = newRemoved) else it
+                    if (it.module.base.name == item.module.base.name) it.copy(isRemoved = newRemoved) else it
                 }
             )
         }

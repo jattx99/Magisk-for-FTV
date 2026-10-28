@@ -10,7 +10,7 @@ use crate::ffi::{
 };
 use crate::logging::{android_logging, magisk_logging, setup_logfile, start_log_daemon};
 use crate::module::remove_modules;
-use crate::package::ManagerInfo;
+use crate::package::TrackedFile;
 use crate::resetprop::{get_prop, set_prop};
 use crate::selinux::restore_tmpcon;
 use crate::socket::{IpcRead, IpcWrite};
@@ -56,7 +56,7 @@ pub const fn to_user_id(uid: i32) -> i32 {
 #[derive(Default)]
 pub struct MagiskD {
     pub sql_connection: Mutex<Option<Sqlite3>>,
-    pub manager_info: Mutex<ManagerInfo>,
+    pub manager_info: Mutex<TrackedFile>,
     pub boot_stage_lock: Mutex<BootState>,
     pub module_list: OnceLock<Vec<ModuleInfo>>,
     pub zygisk_enabled: AtomicBool,
@@ -76,14 +76,6 @@ impl MagiskD {
 
     pub fn sdk_int(&self) -> i32 {
         self.sdk_int
-    }
-
-    pub fn app_data_dir(&self) -> &'static Utf8CStr {
-        if self.sdk_int >= 24 {
-            cstr!("/data/user_de")
-        } else {
-            cstr!("/data/user")
-        }
     }
 
     fn handle_request_sync(&self, mut client: UnixStream, code: RequestCode) {

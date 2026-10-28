@@ -38,6 +38,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,11 +46,15 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.google.accompanist.drawablepainter.rememberDrawablePainter
+import com.topjohnwu.magisk.core.Config
+import com.topjohnwu.magisk.ui.component.AppIcon
 import com.topjohnwu.magisk.ui.component.ConfirmResult
 import com.topjohnwu.magisk.ui.component.SettingsSwitch
+import com.topjohnwu.magisk.ui.component.rememberBiometricAuth
 import com.topjohnwu.magisk.ui.component.rememberConfirmDialog
 import com.topjohnwu.magisk.ui.component.verticalScrollbar
+import com.topjohnwu.magisk.ui.navigation.LocalNavigator
+import com.topjohnwu.magisk.ui.navigation.Route
 import kotlinx.coroutines.launch
 import com.topjohnwu.magisk.core.R as CoreR
 
@@ -60,14 +65,28 @@ fun SuperuserDetailScreen(
     viewModel: SuperuserViewModel,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    onAuthenticate: ((onSuccess: () -> Unit) -> Unit)? = null,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val items = uiState.policies.filter { it.policy.uid == uid }
+    // After a revoke, the policy is removed from the state while this screen is still
+    // animating out, so keep showing the last known content instead of a blank page.
+    val lastItems = remember(uid) { LastItems() }
+    val currentItems = uiState.policies.filter { it.uid == uid }
+    val items = currentItems
+        .also { if (it.isNotEmpty()) lastItems.value = it }
+        .ifEmpty { lastItems.value }
     val item = items.firstOrNull()
+
+    // If the policy disappears while this screen is still shown (e.g. the app was uninstalled),
+    // leave instead of showing stale content. After a revoke, we have already navigated away.
+    val navigator = LocalNavigator.current
+    val isGone = !uiState.loading && currentItems.isEmpty()
+    LaunchedEffect(isGone) {
+        if (isGone && navigator.current() == Route.SuperuserDetail(uid)) onBack()
+    }
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
+    val requireAuth = rememberBiometricAuth()
     val revokeDialog = rememberConfirmDialog()
     val revokeTitle = stringResource(CoreR.string.su_revoke_title)
     val revokeMsg = item?.let { stringResource(CoreR.string.su_revoke_msg, it.appName) } ?: ""
@@ -76,11 +95,6 @@ fun SuperuserDetailScreen(
         viewModel.refreshSuRestrict()
         if (uiState.policies.isEmpty()) {
             viewModel.startLoading()
-        }
-    }
-    LaunchedEffect(onAuthenticate) {
-        if (onAuthenticate != null) {
-            viewModel.authenticate = onAuthenticate
         }
     }
 
@@ -138,8 +152,8 @@ fun SuperuserDetailScreen(
                     modifier = Modifier.padding(18.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Image(
-                        painter = rememberDrawablePainter(item.icon),
+                    AppIcon(
+                        packageName = item.packageName,
                         contentDescription = item.appName,
                         modifier = Modifier.size(48.dp)
                     )
@@ -163,7 +177,7 @@ fun SuperuserDetailScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = "UID: ${item.policy.uid}",
+                            text = "UID: ${item.uid}",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -180,7 +194,11 @@ fun SuperuserDetailScreen(
                     SettingsSwitch(
                         title = stringResource(CoreR.string.settings_su_restrict_title),
                         checked = item.isRestricted,
-                        onCheckedChange = { viewModel.toggleRestrict(item) }
+                        onCheckedChange = {
+                            requireAuth {
+                                viewModel.toggleRestrict(item)
+                            }
+                        }
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                 }
@@ -199,8 +217,8 @@ fun SuperuserDetailScreen(
 
             RevokeButton(
                 onClick = {
-                    if (viewModel.requiresAuth) {
-                        viewModel.authenticate { viewModel.performDelete(item, onBack) }
+                    if (Config.suAuth) {
+                        requireAuth { viewModel.performDelete(item, onBack) }
                     } else {
                         scope.launch {
                             val result = revokeDialog.awaitConfirm(
@@ -244,4 +262,9 @@ private fun RevokeButton(
             style = MaterialTheme.typography.labelLarge,
         )
     }
+}
+
+// Plain holder: updating it must not trigger recomposition
+private class LastItems {
+    var value: List<PolicyItem> = emptyList()
 }

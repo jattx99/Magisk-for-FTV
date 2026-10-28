@@ -123,11 +123,12 @@ adb_pm_install() {
   local tmp=/data/local/tmp/temp.apk
   cp -f "$1" $tmp
   chmod 644 $tmp
-  su 2000 -c pm install -g $tmp || pm install -g $tmp || su 1000 -c pm install -g $tmp
+  local cmd="pm install --user current -g $tmp"
+  su 2000 -c $cmd || $cmd || su 1000 -c $cmd
   local res=$?
   rm -f $tmp
   if [ $res = 0 ]; then
-    appops set "$2" REQUEST_INSTALL_PACKAGES allow
+    appops set --user current "$2" REQUEST_INSTALL_PACKAGES allow
   fi
   return $res
 }
@@ -152,20 +153,16 @@ check_boot_ramdisk() {
 
 check_encryption() {
   if $ISENCRYPTED; then
-    if [ $SDK_INT -lt 24 ]; then
-      CRYPTOTYPE="block"
-    else
-      # First see what the system tells us
-      CRYPTOTYPE=$(getprop ro.crypto.type)
-      if [ -z $CRYPTOTYPE ]; then
-        # If not mounting through device mapper, we are FBE
-        if grep ' /data ' /proc/mounts | grep -qv 'dm-'; then
-          CRYPTOTYPE="file"
-        else
-          # We are either FDE or metadata encryption (which is also FBE)
-          CRYPTOTYPE="block"
-          grep -q ' /metadata ' /proc/mounts && CRYPTOTYPE="file"
-        fi
+    # First see what the system tells us
+    CRYPTOTYPE=$(getprop ro.crypto.type)
+    if [ -z $CRYPTOTYPE ]; then
+      # If not mounting through device mapper, we are FBE
+      if grep ' /data ' /proc/mounts | grep -qv 'dm-'; then
+        CRYPTOTYPE="file"
+      else
+        # We are either FDE or metadata encryption (which is also FBE)
+        CRYPTOTYPE="block"
+        grep -q ' /metadata ' /proc/mounts && CRYPTOTYPE="file"
       fi
     fi
   else

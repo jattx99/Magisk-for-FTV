@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -38,8 +39,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
@@ -48,7 +47,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
+import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -71,9 +73,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
+import com.topjohnwu.magisk.core.Info
 import com.topjohnwu.magisk.core.ktx.timeDateFormat
 import com.topjohnwu.magisk.core.ktx.toTime
 import com.topjohnwu.magisk.core.model.su.SuLog
+import com.topjohnwu.magisk.ui.component.onlyHorizontal
 import com.topjohnwu.magisk.ui.component.rememberExternalStoragePermissionLauncher
 import com.topjohnwu.magisk.ui.component.verticalScrollbar
 import kotlinx.coroutines.launch
@@ -87,11 +91,13 @@ fun LogScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+    val hasRoot = Info.env.isActive
     val tabTitles = listOf(
         stringResource(CoreR.string.superuser),
         stringResource(CoreR.string.magisk)
     )
     val pagerState = rememberPagerState(pageCount = { tabTitles.size })
+    val isMagiskLogPage = !hasRoot || pagerState.currentPage == 1
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     val saveMagiskLog = rememberExternalStoragePermissionLauncher {
         viewModel.saveMagiskLog()
@@ -114,7 +120,7 @@ fun LogScreen(
                 TopAppBar(
                     title = { Text(stringResource(CoreR.string.logs)) },
                     actions = {
-                        if (pagerState.currentPage == 1) {
+                        if (isMagiskLogPage) {
                             IconButton(onClick = saveMagiskLog) {
                                 Icon(
                                     imageVector = Icons.Default.Download,
@@ -124,8 +130,8 @@ fun LogScreen(
                         }
                         IconButton(
                             onClick = {
-                                if (pagerState.currentPage == 0) viewModel.clearLog()
-                                else viewModel.clearMagiskLog()
+                                if (isMagiskLogPage) viewModel.clearMagiskLog()
+                                else viewModel.clearLog()
                             }
                         ) {
                             Icon(
@@ -140,20 +146,22 @@ fun LogScreen(
                     ),
                     scrollBehavior = scrollBehavior
                 )
-                PrimaryTabRow(
-                    selectedTabIndex = pagerState.currentPage,
-                    containerColor = Color.Transparent,
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .widthIn(max = 960.dp)
-                        .fillMaxWidth()
-                ) {
-                    tabTitles.forEachIndexed { index, title ->
-                        Tab(
-                            selected = pagerState.currentPage == index,
-                            onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
-                            text = { Text(title) }
-                        )
+                if (hasRoot) {
+                    PrimaryTabRow(
+                        selectedTabIndex = pagerState.currentPage,
+                        containerColor = Color.Transparent,
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .widthIn(max = 960.dp)
+                            .fillMaxWidth()
+                    ) {
+                        tabTitles.forEachIndexed { index, title ->
+                            Tab(
+                                selected = pagerState.currentPage == index,
+                                onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
+                                text = { Text(title) }
+                            )
+                        }
                     }
                 }
             }
@@ -168,43 +176,57 @@ fun LogScreen(
             ) {
                 CircularProgressIndicator()
             }
+        } else if (!hasRoot) {
+            MagiskLogTab(
+                entries = uiState.magiskLogEntries,
+                nestedScrollConnection = scrollBehavior.nestedScrollConnection,
+                contentPadding = padding,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .consumeWindowInsets(padding),
+            )
         } else {
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
+                    .consumeWindowInsets(padding),
                 beyondViewportPageCount = 0,
             ) { page ->
                 val isCurrentLogPage = pagerState.currentPage == page
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .focusProperties {
-                            onEnter = {
-                                if (!isCurrentLogPage) {
-                                    cancelFocusChange()
+                val childOwner = rememberNavigationEventDispatcherOwner(enabled = isCurrentLogPage)
+                CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides childOwner) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .focusProperties {
+                                onEnter = {
+                                    if (!isCurrentLogPage) {
+                                        cancelFocusChange()
+                                    }
+                                }
+                                onExit = {
+                                    if (requestedFocusDirection == FocusDirection.Left ||
+                                        requestedFocusDirection == FocusDirection.Right
+                                    ) {
+                                        cancelFocusChange()
+                                    }
                                 }
                             }
-                            onExit = {
-                                if (requestedFocusDirection == FocusDirection.Left ||
-                                    requestedFocusDirection == FocusDirection.Right
-                                ) {
-                                    cancelFocusChange()
-                                }
-                            }
+                            .focusGroup()
+                    ) {
+                        when (page) {
+                            0 -> SuLogTab(
+                                logs = uiState.suLogs,
+                                nestedScrollConnection = scrollBehavior.nestedScrollConnection,
+                                contentPadding = padding,
+                            )
+                            1 -> MagiskLogTab(
+                                entries = uiState.magiskLogEntries,
+                                nestedScrollConnection = scrollBehavior.nestedScrollConnection,
+                                contentPadding = padding,
+                            )
                         }
-                        .focusGroup()
-                ) {
-                    when (page) {
-                        0 -> SuLogTab(
-                            logs = uiState.suLogs,
-                            nestedScrollConnection = scrollBehavior.nestedScrollConnection
-                        )
-                        1 -> MagiskLogTab(
-                            entries = uiState.magiskLogEntries,
-                            nestedScrollConnection = scrollBehavior.nestedScrollConnection
-                        )
                     }
                 }
             }
@@ -216,7 +238,8 @@ fun LogScreen(
 private fun SuLogTab(
     logs: List<SuLog>,
     nestedScrollConnection: NestedScrollConnection,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
     Column(modifier = modifier.fillMaxSize()) {
         if (logs.isEmpty()) {
@@ -224,6 +247,7 @@ private fun SuLogTab(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .padding(contentPadding)
                     .padding(horizontal = 16.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -242,8 +266,20 @@ private fun SuLogTab(
                 modifier = Modifier
                     .weight(1f)
                     .nestedScroll(nestedScrollConnection)
-                    .verticalScrollbar(gridState, contentPadding = PaddingValues(vertical = 12.dp)),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(contentPadding.onlyHorizontal())
+                    .verticalScrollbar(
+                        gridState,
+                        contentPadding = PaddingValues(
+                            top = contentPadding.calculateTopPadding() + 12.dp,
+                            bottom = contentPadding.calculateBottomPadding() + 12.dp,
+                        ),
+                    ),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    top = contentPadding.calculateTopPadding() + 12.dp,
+                    end = 16.dp,
+                    bottom = contentPadding.calculateBottomPadding() + 12.dp,
+                ),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -300,45 +336,46 @@ private fun SuLogCard(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
-        ListItem(
-            leadingContent = {
-                Image(
-                    painter = rememberDrawablePainter(icon),
-                    contentDescription = log.appName,
-                    modifier = Modifier.size(40.dp)
-                )
-            },
-            headlineContent = {
-                Text(
-                    text = log.appName,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            },
-            supportingContent = {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Image(
+                painter = rememberDrawablePainter(icon),
+                contentDescription = log.appName,
+                modifier = Modifier.size(40.dp)
+            )
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = log.appName,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    SuActionBadge(allowed = allowed)
+                }
+                Spacer(Modifier.height(2.dp))
                 Text(
                     text = uidPidText,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
-            },
-            trailingContent = {
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = log.time.toTime(timeDateFormat),
-                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    SuActionBadge(allowed = allowed)
-                }
-            },
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-        )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = log.time.toTime(timeDateFormat),
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
 
         if (details.isNotEmpty()) {
             HorizontalDivider(
@@ -381,7 +418,8 @@ private fun SuActionBadge(
 private fun MagiskLogTab(
     entries: List<MagiskLogEntry>,
     nestedScrollConnection: NestedScrollConnection,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
     Column(modifier = modifier.fillMaxSize()) {
         if (entries.isEmpty()) {
@@ -389,6 +427,7 @@ private fun MagiskLogTab(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .padding(contentPadding)
                     .padding(horizontal = 16.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -407,8 +446,20 @@ private fun MagiskLogTab(
                     .weight(1f)
                     .fillMaxWidth()
                     .nestedScroll(nestedScrollConnection)
-                    .verticalScrollbar(listState, contentPadding = PaddingValues(vertical = 12.dp)),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(contentPadding.onlyHorizontal())
+                    .verticalScrollbar(
+                        listState,
+                        contentPadding = PaddingValues(
+                            top = contentPadding.calculateTopPadding() + 12.dp,
+                            bottom = contentPadding.calculateBottomPadding() + 12.dp,
+                        ),
+                    ),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    top = contentPadding.calculateTopPadding() + 12.dp,
+                    end = 16.dp,
+                    bottom = contentPadding.calculateBottomPadding() + 12.dp,
+                ),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 // A log reads top to bottom, so keep one column but cap its width
                 horizontalAlignment = Alignment.CenterHorizontally,

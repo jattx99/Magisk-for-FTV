@@ -2,7 +2,7 @@
 #   AVD Magisk Setup
 #####################################################################
 #
-# Support API level: 23 - 36
+# Support API level: 24 - 36
 #
 # For developing Magisk, just use:
 # ./build.py emulator
@@ -51,7 +51,7 @@ if [ -z "$FIRST_STAGE" ]; then
   fi
 fi
 
-pm install -r -g $(pwd)/magisk.apk
+pm install --user current -r -g $(pwd)/magisk.apk
 
 # Stop zygote (and previous setup if exists)
 magisk --stop 2>/dev/null
@@ -114,7 +114,7 @@ mkdir /data/adb/modules 2>/dev/null
 mkdir /data/adb/post-fs-data.d 2>/dev/null
 mkdir /data/adb/service.d 2>/dev/null
 
-MAGISK_FILES="magisk magiskpolicy stub.apk"
+MAGISK_FILES="magisk magiskpolicy"
 if [ -e /system/bin/linker ] && [ -e /system/bin/linker64 ]; then
   MAGISK_FILES="$MAGISK_FILES magisk32"
 fi

@@ -1,7 +1,9 @@
 use super::SuInfo;
+use crate::consts::APP_PACKAGE_NAME;
 use crate::daemon::{AID_APP_START, MagiskD, to_app_id, to_user_id};
 use crate::ffi::{SuRequest, fork_dont_care};
 use ExtraVal::{Bool, Int, IntList, Str};
+use base::const_format::concatcp;
 use base::{BytesExt, error};
 use nix::sys::signal::SigSet;
 use num_traits::AsPrimitive;
@@ -70,19 +72,16 @@ impl Extra<'_> {
 }
 
 impl MagiskD {
-    fn exec_cmd(&self, user: i32, mgr_pkg: &str, action: &'static str, extras: &[Extra]) {
-        let user = user.to_string();
-
-        let provider = format!("content://{mgr_pkg}.provider");
+    fn exec_cmd(&self, user: &str, action: &'static str, extras: &[Extra]) {
         let mut cmd = app_process();
         cmd.args([
             "/system/bin",
             "com.android.commands.content.Content",
             "call",
             "--uri",
-            &provider,
+            concatcp!("content://", APP_PACKAGE_NAME, ".provider"),
             "--user",
-            &user,
+            user,
             "--method",
             action,
         ]);
@@ -164,20 +163,17 @@ impl MagiskD {
                 value: Bool(info.settings.log),
             },
         ];
-        if to_app_id(info.eval_uid) < AID_APP_START {
-            for user in self.get_users() {
-                self.exec_cmd(user, &info.mgr_pkg, "notify", &extras);
-            }
+        let user_id;
+        let user = if to_app_id(info.eval_uid) < AID_APP_START {
+            "current"
         } else {
-            self.exec_cmd(to_user_id(info.eval_uid), &info.mgr_pkg, "notify", &extras);
-        }
+            user_id = to_user_id(info.eval_uid).to_string();
+            &user_id
+        };
+        self.exec_cmd(user, "notify", &extras);
     }
 
     pub(super) fn notify_app(&self, cred: &UCred, info: &SuInfo, request: &SuRequest) {
-        if info.mgr_pkg.is_empty() {
-            return;
-        }
-
         if !info.settings.log && !info.settings.notify {
             return;
         }

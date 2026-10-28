@@ -10,11 +10,15 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
@@ -30,11 +34,18 @@ import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffo
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffoldDefaults
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.navigationevent.NavigationEventInfo
+import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
+import androidx.navigationevent.compose.NavigationBackHandler
+import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
+import androidx.navigationevent.compose.rememberNavigationEventState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
@@ -61,6 +72,7 @@ import com.topjohnwu.magisk.ui.module.ModuleScreen
 import com.topjohnwu.magisk.ui.module.ModuleViewModel
 import com.topjohnwu.magisk.ui.navigation.CollectNavEvents
 import com.topjohnwu.magisk.ui.navigation.LocalNavigator
+import com.topjohnwu.magisk.ui.navigation.Route
 import com.topjohnwu.magisk.ui.settings.SettingsScreen
 import com.topjohnwu.magisk.ui.settings.SettingsViewModel
 import com.topjohnwu.magisk.ui.superuser.SuperuserScreen
@@ -80,8 +92,9 @@ enum class Tab(val titleRes: Int, val iconRes: Int) {
 fun MainScreen(
     modifier: Modifier = Modifier,
     initialTab: Int = Tab.HOME.ordinal,
+    requestedTab: Int? = null,
+    onTabRequestHandled: () -> Unit = {},
     superuserViewModel: SuperuserViewModel? = null,
-    onAuthenticate: ((onSuccess: () -> Unit) -> Unit)? = null,
 ) {
     val navigator = LocalNavigator.current
     val scope = rememberCoroutineScope()
@@ -96,6 +109,15 @@ fun MainScreen(
     }
     val initialPage = visibleTabs.indexOf(Tab.entries[initialTab]).coerceAtLeast(0)
     val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { visibleTabs.size })
+
+    // Show a tab requested while the app is already running, e.g. by the system settings
+    val currentOnTabRequestHandled by rememberUpdatedState(onTabRequestHandled)
+    LaunchedEffect(requestedTab) {
+        if (requestedTab == null) return@LaunchedEffect
+        val page = visibleTabs.indexOf(Tab.entries[requestedTab])
+        if (page >= 0) pagerState.scrollToPage(page)
+        currentOnTabRequestHandled()
+    }
     val fabFocusRequester = remember { FocusRequester() }
     val navModulesFocusRequester = remember { FocusRequester() }
     val navSuperuserFocusRequester = remember { FocusRequester() }
@@ -105,6 +127,19 @@ fun MainScreen(
     var superuserFabAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     val isModulesTab = visibleTabs.getOrNull(pagerState.currentPage) == Tab.MODULES
     val isSuperuserTab = visibleTabs.getOrNull(pagerState.currentPage) == Tab.SUPERUSER
+
+    val homePageIndex = remember(visibleTabs) { visibleTabs.indexOf(Tab.HOME).coerceAtLeast(0) }
+    val isNotAtHome = pagerState.currentPage != homePageIndex && navigator.current() == Route.Main
+    val tabBackState = rememberNavigationEventState(currentInfo = NavigationEventInfo.None)
+    NavigationBackHandler(
+        state = tabBackState,
+        isBackEnabled = isNotAtHome,
+        onBackCompleted = {
+            scope.launch {
+                pagerState.animateScrollToPage(homePageIndex)
+            }
+        }
+    )
 
     // The collapsed rail needs 520dp (44dp top space, 96dp FAB header, 5 items, 44dp bottom) to
     // show every item. In shorter windows use the bar, like the library does below 480dp.
@@ -148,7 +183,8 @@ fun MainScreen(
                     icon = {
                         Icon(
                             imageVector = ImageVector.vectorResource(tab.iconRes),
-                            contentDescription = stringResource(tab.titleRes),
+                            // The label below already names the tab
+                            contentDescription = null,
                         )
                     },
                     label = { Text(stringResource(tab.titleRes)) },
@@ -159,8 +195,11 @@ fun MainScreen(
             // In the rail header, keep the FAB slot even when the FAB is hidden so the rail
             // items don't jump on tab switches, and center the FAB in the collapsed rail.
             // Skip the slot if no tab has a FAB (no root).
+            // In bar mode, the scaffold places this slot at the end edge of the window without
+            // considering insets, so pad it to keep the FAB clear of side system bars and cutouts.
             Box(
-                if (isBar || !hasFabTab) Modifier
+                if (isBar) Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.End))
+                else if (!hasFabTab) Modifier
                 else Modifier.padding(start = 20.dp).heightIn(min = 56.dp)
             ) {
                 AnimatedVisibility(
@@ -211,8 +250,12 @@ fun MainScreen(
             userScrollEnabled = isBar,
         ) { page ->
             val isCurrentPage = pagerState.currentPage == page
-            val tab = visibleTabs[page]
-            Box(
+            val childOwner = rememberNavigationEventDispatcherOwner(enabled = isCurrentPage)
+            CompositionLocalProvider(
+                LocalNavigationEventDispatcherOwner provides childOwner,
+            ) {
+                val tab = visibleTabs[page]
+                Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .focusProperties {
@@ -257,11 +300,6 @@ fun MainScreen(
                             } else {
                                 viewModel(factory = VMFactory)
                             }
-                        LaunchedEffect(onAuthenticate) {
-                            if (onAuthenticate != null) {
-                                vm.authenticate = onAuthenticate
-                            }
-                        }
                         LaunchedEffect(isCurrentPage) {
                             if (isCurrentPage) vm.startLoading()
                         }
@@ -269,6 +307,7 @@ fun MainScreen(
                         SuperuserScreen(
                             viewModel = vm,
                             onRegisterFab = { superuserFabAction = it },
+                            isFabAtBottom = isBar,
                             contentFocusRequester = superuserContentFocusRequester,
                         )
                     }
@@ -288,20 +327,17 @@ fun MainScreen(
                         ModuleScreen(
                             viewModel = vm,
                             onRegisterFab = { moduleFabAction = it },
+                            isFabAtBottom = isBar,
                             contentFocusRequester = moduleContentFocusRequester,
                         )
                     }
                     Tab.SETTINGS -> {
                         val vm: SettingsViewModel = viewModel(factory = VMFactory)
-                        LaunchedEffect(onAuthenticate) {
-                            if (onAuthenticate != null) {
-                                vm.authenticate = onAuthenticate
-                            }
-                        }
                         CollectNavEvents(vm, navigator)
                         SettingsScreen(vm)
                     }
                 }
+            }
             }
         }
     }

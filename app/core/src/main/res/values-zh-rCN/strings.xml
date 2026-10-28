@@ -45,9 +45,6 @@
     <string name="install_inactive_slot">安装到未使用的槽位（OTA 后）</string>
     <string name="install_inactive_slot_msg">将在重启后强制切换到另一个槽位！注意只能在 OTA 更新完成后的重启之前使用。</string>
     <string name="setup_title">修复安装</string>
-    <string name="select_patch_file">选择并修补文件</string>
-    <string name="patch_file_msg">选择一个原始映像文件（*.img）、Odin 包（*.tar）或 payload.bin（*.bin）</string>
-    <string name="download_patch_file">下载并修补映像</string>
     <string name="download_dialog_title">输入映像链接</string>
     <string name="download_dialog_msg">完整 OTA 映像或者出厂映像</string>
     <string name="reboot_delay_toast">设备将在 5 秒后重启</string>
@@ -142,10 +139,6 @@
     <string name="settings_dark_mode_dark">深色模式</string>
     <string name="settings_download_path_title">下载路径</string>
     <string name="settings_download_path_message">文件将保存到 %1$s</string>
-    <string name="settings_hide_app_title">隐藏 Magisk 应用</string>
-    <string name="settings_hide_app_summary">安装具有随机包名和自定义应用名称的代理应用</string>
-    <string name="settings_restore_app_title">还原 Magisk 应用</string>
-    <string name="settings_restore_app_summary">取消隐藏，恢复到原始应用</string>
     <string name="language">语言</string>
     <string name="system_default">系统默认</string>
     <string name="settings_check_update_title">检查更新</string>
@@ -164,11 +157,6 @@
     <string name="settings_hosts_title">Systemless hosts</string>
     <string name="settings_hosts_summary">为广告屏蔽应用提供 Systemless hosts 支持</string>
     <string name="settings_hosts_toast">已添加 systemless hosts 模块</string>
-    <string name="settings_app_name_hint">新的应用名称</string>
-    <string name="settings_app_name_helper">将使用新名称重新安装本应用</string>
-    <string name="settings_app_name_error">无效输入</string>
-
-
     <string name="superuser_notification">超级用户通知</string>
 
 
@@ -185,7 +173,6 @@
     <string name="color_mode_monet_system">跟随系统（动态取色）</string>
     <string name="color_mode_monet_light">浅色主题（动态取色）</string>
     <string name="color_mode_monet_dark">深色主题（动态取色）</string>
-    <string name="setting_add_shortcut_summary">在隐藏后难以识别名称和图标的情况下，添加快捷方式到桌面</string>
     <string name="settings_doh_title">安全 DNS（DoH）</string>
     <string name="settings_doh_description">解决某些地区的 DNS 污染问题</string>
     <string name="settings_random_name_title">随机文件名</string>
@@ -231,7 +218,6 @@
     <string name="flashing">正在刷入</string>    <string name="done">完成！</string>
     <string name="done_action">%1$s 操作运行完成</string>
     <string name="failure">失败</string>
-    <string name="hide_app_title">正在隐藏 Magisk 应用</string>
     <string name="open_link_failed_toast">找不到能打开此链接的应用</string>
     <string name="complete_uninstall">完全卸载</string>
     <string name="restore_img">还原原厂映像</string>
@@ -249,14 +235,9 @@
     <string name="unsupport_system_app_msg">Magisk 不支持安装为系统应用，请还原为用户应用。</string>
     <string name="unsupport_other_su_msg">检测到不属于 Magisk 的 su 文件，请删除其他超级用户程序。</string>
     <string name="unsupport_external_storage_msg">不支持将 Magisk 安装到外置存储卡，请将应用移动回内部存储空间。</string>
-    <string name="unsupport_nonroot_stub_msg">超级用户权限丢失，应用无法在隐藏状态下继续工作，请恢复到原始 Magisk 应用。</string>
-    <string name="unsupport_nonroot_stub_title">@string/settings_restore_app_title</string>
     <string name="external_rw_permission_denied">允许访问存储空间以使用此功能</string>
     <string name="post_notifications_denied">允许发送通知以使用此功能</string>
     <string name="install_unknown_denied">允许安装未知应用以使用此功能</string>
-    <string name="add_shortcut_title">添加快捷方式到桌面</string>
-    <string name="add_shortcut_msg">隐藏后应用的名字和图标可能难以识别。需要在桌面上添加具有原始名称和图标的快捷方式吗？</string>
     <string name="app_not_found">找不到可处理此操作的应用</string>
     <string name="reboot_apply_change">重启后生效</string>
-    <string name="restore_app_confirmation">即将把隐藏的 Magisk 应用恢复回原始应用，是否继续？</string>
 </resources>

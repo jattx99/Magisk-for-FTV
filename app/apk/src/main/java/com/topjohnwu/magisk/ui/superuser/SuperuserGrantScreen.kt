@@ -17,15 +17,10 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Sort
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,17 +34,18 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.navigationevent.NavigationEventInfo
+import androidx.navigationevent.compose.NavigationBackHandler
+import androidx.navigationevent.compose.rememberNavigationEventState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.topjohnwu.magisk.ui.component.AppSortFilterActions
+import com.topjohnwu.magisk.ui.component.rememberBiometricAuth
 import com.topjohnwu.magisk.ui.component.verticalScrollbar
 import com.topjohnwu.magisk.core.R as CoreR
 
@@ -69,8 +65,16 @@ fun SuperuserGrantScreen(
     val sortBy by viewModel.sortBy.collectAsStateWithLifecycle()
     val sortReverse by viewModel.sortReverse.collectAsStateWithLifecycle()
 
-    var showSortMenu by remember { mutableStateOf(false) }
-    var showFilterMenu by remember { mutableStateOf(false) }
+    val requireAuth = rememberBiometricAuth()
+
+    val searchBackState = rememberNavigationEventState(currentInfo = NavigationEventInfo.None)
+    NavigationBackHandler(
+        state = searchBackState,
+        isBackEnabled = query.isNotEmpty(),
+        onBackCompleted = {
+            viewModel.setQuery("")
+        }
+    )
 
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     Scaffold(
@@ -79,7 +83,15 @@ fun SuperuserGrantScreen(
             TopAppBar(
                 title = { Text(stringResource(CoreR.string.superuser_grant)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(
+                        onClick = {
+                            if (query.isNotEmpty()) {
+                                viewModel.setQuery("")
+                            } else {
+                                onBack()
+                            }
+                        }
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(CoreR.string.back),
@@ -87,85 +99,16 @@ fun SuperuserGrantScreen(
                     }
                 },
                 actions = {
-                    Box {
-                        IconButton(onClick = { showSortMenu = true }) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Sort,
-                                contentDescription = stringResource(CoreR.string.menu_sort),
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = showSortMenu,
-                            onDismissRequest = { showSortMenu = false }
-                        ) {
-                            val sortOptions = listOf(
-                                CoreR.string.sort_by_name to SortBy.NAME,
-                                CoreR.string.sort_by_package_name to SortBy.PACKAGE_NAME,
-                                CoreR.string.sort_by_install_time to SortBy.INSTALL_TIME,
-                                CoreR.string.sort_by_update_time to SortBy.UPDATE_TIME,
-                            )
-                            sortOptions.forEach { (resId, sort) ->
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(resId)) },
-                                    trailingIcon = if (sortBy == sort) {
-                                        { Icon(Icons.Default.Check, contentDescription = null) }
-                                    } else null,
-                                    onClick = {
-                                        viewModel.setSortBy(sort)
-                                        showSortMenu = false
-                                    }
-                                )
-                            }
-                            DropdownMenuItem(
-                                text = { Text(stringResource(CoreR.string.sort_reverse)) },
-                                trailingIcon = if (sortReverse) {
-                                    { Icon(Icons.Default.Check, contentDescription = null) }
-                                } else null,
-                                onClick = {
-                                    viewModel.toggleSortReverse()
-                                    showSortMenu = false
-                                }
-                            )
-                        }
-                    }
-
-                    Box {
-                        IconButton(onClick = { showFilterMenu = true }) {
-                            Icon(
-                                imageVector = Icons.Default.Tune,
-                                contentDescription = stringResource(CoreR.string.hide_filter_hint),
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = showFilterMenu,
-                            onDismissRequest = { showFilterMenu = false },
-                            offset = DpOffset(x = (-8).dp, y = 0.dp),
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(CoreR.string.show_system_app)) },
-                                trailingIcon = if (showSystem) {
-                                    { Icon(Icons.Default.Check, contentDescription = null) }
-                                } else null,
-                                onClick = {
-                                    viewModel.setShowSystem(!showSystem)
-                                    showFilterMenu = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(CoreR.string.show_os_app)) },
-                                trailingIcon = if (showOS) {
-                                    { Icon(Icons.Default.Check, contentDescription = null) }
-                                } else null,
-                                onClick = {
-                                    if (!showOS && !showSystem) {
-                                        viewModel.setShowSystem(true)
-                                    }
-                                    viewModel.setShowOS(!showOS)
-                                    showFilterMenu = false
-                                }
-                            )
-                        }
-                    }
+                    AppSortFilterActions(
+                        sortBy = sortBy,
+                        sortReverse = sortReverse,
+                        onSortByChanged = { viewModel.setSortBy(it) },
+                        onToggleSortReverse = { viewModel.toggleSortReverse() },
+                        showSystem = showSystem,
+                        showOS = showOS,
+                        onShowSystemChanged = { viewModel.setShowSystem(it) },
+                        onShowOSChanged = { viewModel.setShowOS(it) },
+                    )
                 },
                 scrollBehavior = scrollBehavior
             )
@@ -215,7 +158,11 @@ fun SuperuserGrantScreen(
                     ) { app ->
                         SuGrantAppCard(
                             app = app,
-                            onToggle = { viewModel.toggleGrant(app) }
+                            onToggle = {
+                                requireAuth {
+                                    viewModel.toggleGrant(app)
+                                }
+                            }
                         )
                     }
                 }
@@ -273,9 +220,8 @@ private fun SuGrantAppCard(
     modifier: Modifier = Modifier
 ) {
     SuperuserAppCard(
-        icon = app.info.icon,
-        title = app.info.label,
         packageName = app.info.packageName,
+        title = app.info.label,
         isSharedUid = app.info.isSharedUid,
         checked = app.isGranted,
         onCheckedChange = { onToggle() },

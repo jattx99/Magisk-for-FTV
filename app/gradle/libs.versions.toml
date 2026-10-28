@@ -15,7 +15,6 @@ navigationevent = "1.1.2"
 wire = "7.0.3"
 
 [libraries]
-bcpkix = { module = "org.bouncycastle:bcpkix-jdk18on", version = "1.86" }
 commons-compress = { module = "org.apache.commons:commons-compress", version = "1.28.0" }
 retrofit = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofit" }
 retrofit-moshi = { module = "com.squareup.retrofit2:converter-moshi", version.ref = "retrofit" }
@@ -77,6 +76,5 @@ android-application = { id = "com.android.application", version.ref = "android" 
 android-library = { id = "com.android.library", version.ref = "android" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-lsparanoid = { id = "org.lsposed.lsparanoid", version = "0.6.0" }
 moshix = { id = "dev.zacsweers.moshix", version = "0.37.0" }
 wire = { id = "com.squareup.wire", version.ref = "wire" }

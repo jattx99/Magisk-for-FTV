@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -44,6 +45,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.window.core.layout.WindowSizeClass
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.dropUnlessResumed
+import com.topjohnwu.magisk.ui.component.onlyHorizontal
+import com.topjohnwu.magisk.ui.component.rememberBiometricAuth
 import com.topjohnwu.magisk.ui.component.verticalScrollbar
 import com.topjohnwu.magisk.ui.navigation.LocalNavigator
 import com.topjohnwu.magisk.ui.navigation.Route
@@ -53,6 +57,7 @@ import com.topjohnwu.magisk.core.R as CoreR
 @Composable
 fun SuperuserScreen(
     viewModel: SuperuserViewModel,
+    isFabAtBottom: Boolean,
     modifier: Modifier = Modifier,
     onRegisterFab: (((() -> Unit)?) -> Unit)? = null,
     contentFocusRequester: FocusRequester? = null,
@@ -60,9 +65,12 @@ fun SuperuserScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     val navigator = LocalNavigator.current
+    val requireAuth = rememberBiometricAuth()
+    // Drop taps while a screen transition runs, so a quick second tap can't open another screen
+    val openGrant = dropUnlessResumed { navigator.push(Route.SuperuserGrant) }
 
     DisposableEffect(onRegisterFab) {
-        onRegisterFab?.invoke { navigator.push(Route.SuperuserGrant) }
+        onRegisterFab?.invoke(openGrant)
         onDispose {
             onRegisterFab?.invoke(null)
         }
@@ -79,7 +87,7 @@ fun SuperuserScreen(
         floatingActionButton = {
             if (onRegisterFab == null) {
                 FloatingActionButton(
-                    onClick = { navigator.push(Route.SuperuserGrant) },
+                    onClick = openGrant,
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     content = {
@@ -134,6 +142,9 @@ fun SuperuserScreen(
             return@Scaffold
         }
 
+        val listBottomPadding = padding.calculateBottomPadding() + if (isFabAtBottom) 92.dp else 12.dp
+        val scrollbarBottomPadding = padding.calculateBottomPadding() + if (isFabAtBottom) 80.dp else 12.dp
+
         val isTv = LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK ==
             Configuration.UI_MODE_TYPE_TELEVISION
         val isCompactWidth = !currentWindowAdaptiveInfo().windowSizeClass
@@ -145,16 +156,28 @@ fun SuperuserScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .nestedScroll(scrollBehavior.nestedScrollConnection)
-                    .padding(padding)
-                    .verticalScrollbar(listState, contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)),
-                contentPadding = PaddingValues(start = 12.dp, top = 16.dp, end = 12.dp, bottom = 92.dp),
+                    .consumeWindowInsets(padding)
+                    .padding(padding.onlyHorizontal())
+                    .verticalScrollbar(
+                        listState,
+                        contentPadding = PaddingValues(
+                            top = padding.calculateTopPadding() + 4.dp,
+                            bottom = scrollbarBottomPadding,
+                        ),
+                    ),
+                contentPadding = PaddingValues(
+                    start = 12.dp,
+                    top = padding.calculateTopPadding() + 16.dp,
+                    end = 12.dp,
+                    bottom = listBottomPadding,
+                ),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                columnItems(uiState.policies, key = { "${it.policy.uid}_${it.packageName}" }) { item ->
+                columnItems(uiState.policies, key = { "${it.uid}_${it.packageName}" }) { item ->
                     PolicyCard(
                         item = item,
-                        onToggle = { viewModel.togglePolicy(item) },
-                        onDetail = { navigator.push(Route.SuperuserDetail(item.policy.uid)) },
+                        onToggle = { requireAuth { viewModel.togglePolicy(item) } },
+                        onDetail = dropUnlessResumed { navigator.push(Route.SuperuserDetail(item.uid)) },
                         modifier = if (item == uiState.policies.lastOrNull() && contentFocusRequester != null) {
                             Modifier.focusRequester(contentFocusRequester)
                         } else Modifier,
@@ -169,21 +192,33 @@ fun SuperuserScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .nestedScroll(scrollBehavior.nestedScrollConnection)
-                    .padding(padding)
-                    .verticalScrollbar(gridState, contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)),
-                contentPadding = PaddingValues(start = 12.dp, top = 16.dp, end = 12.dp, bottom = 92.dp),
+                    .consumeWindowInsets(padding)
+                    .padding(padding.onlyHorizontal())
+                    .verticalScrollbar(
+                        gridState,
+                        contentPadding = PaddingValues(
+                            top = padding.calculateTopPadding() + 4.dp,
+                            bottom = scrollbarBottomPadding,
+                        ),
+                    ),
+                contentPadding = PaddingValues(
+                    start = 12.dp,
+                    top = padding.calculateTopPadding() + 16.dp,
+                    end = 12.dp,
+                    bottom = listBottomPadding,
+                ),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(
                     items = uiState.policies,
-                    key = { "${it.policy.uid}_${it.packageName}" },
+                    key = { "${it.uid}_${it.packageName}" },
                     contentType = { "PolicyCard" }
                 ) { item ->
                     PolicyCard(
                         item = item,
-                        onToggle = { viewModel.togglePolicy(item) },
-                        onDetail = { navigator.push(Route.SuperuserDetail(item.policy.uid)) },
+                        onToggle = { requireAuth { viewModel.togglePolicy(item) } },
+                        onDetail = dropUnlessResumed { navigator.push(Route.SuperuserDetail(item.uid)) },
                         modifier = if (item == uiState.policies.lastOrNull() && contentFocusRequester != null) {
                             Modifier.focusRequester(contentFocusRequester)
                         } else Modifier,
@@ -202,9 +237,8 @@ private fun PolicyCard(
     modifier: Modifier = Modifier
 ) {
     SuperuserAppCard(
-        icon = item.icon,
-        title = item.title,
         packageName = item.packageName,
+        title = item.title,
         isSharedUid = item.isSharedUid,
         onClick = onDetail,
         contentDescription = item.appName,

@@ -52,7 +52,7 @@ fun Project.setupCommon() {
         ndkVersion = "30.0.15729638"
 
         defaultConfig.apply {
-            minSdk = 23
+            minSdk = 24
         }
 
         compileOptions.apply {
@@ -67,7 +67,6 @@ fun Project.setupCommon() {
                     "/META-INF/androidx/**",
                     "/META-INF/versions/**",
                     "/META-INF/native-image/**",
-                    "/org/bouncycastle/**",
                     "/org/apache/commons/**",
                     "/kotlin/**",
                     "/*.txt",
@@ -167,7 +166,6 @@ fun Project.setupCoreLib() {
             variant.sources.resources
                 ?.addGeneratedSourceDirectory(syncResources, SyncWithDir::outputFolder)
 
-            val stubTask = tasks.getByPath(":stub:transform${variantCapped}Apk")
             val syncAssets = tasks.register("sync${variantCapped}Assets", SyncWithDir::class) {
                 outputFolder.set(layout.buildDirectory.dir("$variantName/assets"))
                 into(outputFolder)
@@ -177,10 +175,6 @@ fun Project.setupCoreLib() {
                 from(rootFile("scripts")) {
                     include("util_functions.sh", "boot_patch.sh", "addon.d.sh",
                         "app_functions.sh", "uninstaller.sh", "module_installer.sh")
-                }
-                from(stubTask) {
-                    include { it.name.endsWith(".apk") }
-                    rename { "stub.apk" }
                 }
                 filesMatching("**/util_functions.sh") {
                     filter {
@@ -263,8 +257,7 @@ fun Project.setupAppCommon() {
                 // Always add a transformation to set comments on the APK
                 this.transformations.add {
                     it.eocdComment = ("version=${Config.version}\n" +
-                            "versionCode=${Config.versionCode}\n" +
-                            "stubVersion=${Config.stubVersion}\n").toByteArray()
+                            "versionCode=${Config.versionCode}\n").toByteArray()
                 }
             }
 
@@ -280,7 +273,6 @@ fun Project.setupMainApk() {
 
         defaultConfig {
             applicationId = "com.topjohnwu.magisk"
-            vectorDrawables.useSupportLibrary = true
             versionName = Config.version
             versionCode = Config.versionCode
             ndk {

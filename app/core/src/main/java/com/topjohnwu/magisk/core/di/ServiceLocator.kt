@@ -9,8 +9,6 @@ import com.topjohnwu.magisk.core.Const
 import com.topjohnwu.magisk.core.data.SuLogDatabase
 import com.topjohnwu.magisk.core.data.magiskdb.PolicyDao
 import com.topjohnwu.magisk.core.data.magiskdb.SettingsDao
-import com.topjohnwu.magisk.core.data.magiskdb.StringDao
-import com.topjohnwu.magisk.core.ktx.deviceProtectedContext
 import com.topjohnwu.magisk.core.repository.FirmwareCrawler
 import com.topjohnwu.magisk.core.repository.LogRepository
 import com.topjohnwu.magisk.core.repository.NetworkService
@@ -20,12 +18,11 @@ import io.noties.markwon.utils.NoCopySpannableFactory
 @SuppressLint("StaticFieldLeak")
 object ServiceLocator {
 
-    val deContext by lazy { AppContext.deviceProtectedContext }
+    val deContext by lazy { AppContext.createDeviceProtectedStorageContext() }
 
     // Database
     val policyDB = PolicyDao()
     val settingsDB = SettingsDao()
-    val stringDB = StringDao()
     val sulogDB by lazy { createSuLogDatabase(deContext).suLogDao() }
     val logRepo by lazy { LogRepository(sulogDB) }
 
